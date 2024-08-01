@@ -141,28 +141,13 @@ function getClaudeFiles() {
 	return files;
 }
 
-async function removeOldFiles() {
-	console.log("Removing old files...");
-
-	const claudeFiles = getClaudeFiles();
-	for (const file of claudeFiles) {
-		if (file.removeButton) {
-			console.log(`Removing file: ${file.name}`);
-			file.removeButton.click();
-			await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for the removal to complete
-		}
-	}
-
-	console.log("All old files removed.");
-}
-
 async function updateProject() {
 	try {
 		console.log("Starting project update...");
 		const githubUrl = extractGithubUrl();
 		console.log("Extracted GitHub URL:", githubUrl);
 
-		await removeOldFiles();
+		const claudeFiles = getClaudeFiles();
 
 		chrome.runtime.sendMessage(
 			{ action: "fetchGitHub", repoUrl: githubUrl },
@@ -174,7 +159,8 @@ async function updateProject() {
 
 				const githubFiles = response.files;
 				console.log("GitHub files:", githubFiles);
-				await updateFiles(githubFiles);
+
+				await syncFiles(claudeFiles, githubFiles);
 			}
 		);
 	} catch (error) {
@@ -182,9 +168,75 @@ async function updateProject() {
 	}
 }
 
-async function updateFiles(githubFiles) {
+async function syncFiles(claudeFiles, githubFiles) {
+	// Remove duplicates from Claude files
+	await removeDuplicates(claudeFiles);
+
+	// Remove files that are not in GitHub
+	await removeDeletedFiles(claudeFiles, githubFiles);
+
+	// Update or add files from GitHub
+	await updateFiles(claudeFiles, githubFiles);
+}
+
+async function removeDuplicates(claudeFiles) {
+	console.log("Removing duplicate files...");
+	const uniqueFiles = new Map();
+
+	for (const file of claudeFiles) {
+		if (uniqueFiles.has(file.name)) {
+			console.log(`Found duplicate: ${file.name}. Removing...`);
+			await removeFile(file);
+		} else {
+			uniqueFiles.set(file.name, file);
+		}
+	}
+}
+
+async function removeDeletedFiles(claudeFiles, githubFiles) {
+	console.log("Removing deleted files...");
+	const githubFileNames = new Set(githubFiles.map((file) => file.name));
+
+	for (const claudeFile of claudeFiles) {
+		if (!githubFileNames.has(claudeFile.name)) {
+			console.log(`File ${claudeFile.name} not found in GitHub. Removing...`);
+			await removeFile(claudeFile);
+		}
+	}
+}
+
+async function updateFiles(claudeFiles, githubFiles) {
+	console.log("Updating files...");
+	const claudeFileMap = new Map(claudeFiles.map((file) => [file.name, file]));
+
 	for (const githubFile of githubFiles) {
-		await uploadFileDirectly(githubFile.content, githubFile.name);
+		const claudeFile = claudeFileMap.get(githubFile.name);
+
+		if (!claudeFile) {
+			console.log(`Adding new file: ${githubFile.name}`);
+			await uploadFileDirectly(githubFile.content, githubFile.name);
+		} else {
+			// Compare last modified dates if available, otherwise always update
+			const shouldUpdate =
+				!claudeFile.lastModified ||
+				new Date(githubFile.lastModified) > new Date(claudeFile.lastModified);
+
+			if (shouldUpdate) {
+				console.log(`Updating file: ${githubFile.name}`);
+				await removeFile(claudeFile);
+				await uploadFileDirectly(githubFile.content, githubFile.name);
+			} else {
+				console.log(`File ${githubFile.name} is up to date. Skipping.`);
+			}
+		}
+	}
+}
+
+async function removeFile(file) {
+	if (file.removeButton) {
+		console.log(`Removing file: ${file.name}`);
+		file.removeButton.click();
+		await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for the removal to complete
 	}
 }
 
