@@ -24,48 +24,58 @@ async function fetchGitHubFiles(repoUrl) {
 	console.log(`Owner: ${owner}, Repo: ${repo}`);
 
 	try {
-		const response = await fetch(
-			`https://api.github.com/repos/${owner}/${repo}/contents`,
-			{
-				headers: {
-					Accept: "application/vnd.github.v3+json",
-				},
-			}
+		const files = await fetchFilesRecursively(
+			`https://api.github.com/repos/${owner}/${repo}/contents`
 		);
-
-		if (!response.ok) {
-			if (response.status === 404) {
-				throw new Error(
-					"Repository not found or is private. This extension only works with public repositories."
-				);
-			}
-			const errorBody = await response.text();
-			console.error("GitHub API Error Response:", errorBody);
-			throw new Error(
-				`GitHub API responded with status ${response.status}: ${response.statusText}`
-			);
-		}
-
-		const files = await response.json();
-		console.log("Files retrieved from GitHub:", files);
-
-		// Fetch content for each file
-		const filesWithContent = await Promise.all(
-			files.map(async (file) => {
-				if (file.type !== "file") return file; // Skip directories
-
-				const contentResponse = await fetch(file.download_url);
-				if (!contentResponse.ok) {
-					throw new Error(`Failed to fetch content for ${file.name}`);
-				}
-				file.content = await contentResponse.text();
-				return file;
-			})
-		);
-
-		return filesWithContent;
+		console.log("All files retrieved from GitHub:", files);
+		return files;
 	} catch (error) {
 		console.error("Error in fetchGitHubFiles:", error);
 		throw error;
 	}
+}
+
+async function fetchFilesRecursively(url) {
+	const response = await fetch(url, {
+		headers: {
+			Accept: "application/vnd.github.v3+json",
+		},
+	});
+
+	if (!response.ok) {
+		if (response.status === 404) {
+			throw new Error(
+				"Repository not found or is private. This extension only works with public repositories."
+			);
+		}
+		const errorBody = await response.text();
+		console.error("GitHub API Error Response:", errorBody);
+		throw new Error(
+			`GitHub API responded with status ${response.status}: ${response.statusText}`
+		);
+	}
+
+	const items = await response.json();
+	let files = [];
+
+	for (const item of items) {
+		if (item.type === "file") {
+			const contentResponse = await fetch(item.download_url);
+			if (!contentResponse.ok) {
+				throw new Error(`Failed to fetch content for ${item.name}`);
+			}
+			const content = await contentResponse.text();
+			files.push({
+				name: item.path,
+				content: content,
+				sha: item.sha,
+				lastModified: item.last_modified, // Add this line to include last_modified information
+			});
+		} else if (item.type === "dir") {
+			const subFiles = await fetchFilesRecursively(item.url);
+			files = files.concat(subFiles);
+		}
+	}
+
+	return files;
 }
