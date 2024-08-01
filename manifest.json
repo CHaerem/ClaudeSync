@@ -2,23 +2,16 @@
   "manifest_version": 3,
   "name": "Claude Project Updater",
   "version": "1.0",
-  "description": "Update Claude.ai project from GitHub",
+  "description": "Update Claude.ai project from public GitHub repositories",
   "permissions": [
-    "activeTab",
-    "scripting",
-    "storage"
+    "activeTab"
   ],
   "host_permissions": [
     "https://claude.ai/*",
     "https://api.github.com/*"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
+    "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js"

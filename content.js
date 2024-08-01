@@ -1,13 +1,168 @@
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-	if (request.action === "updateProject") {
-		updateProject();
+// Content script for updating Claude.ai projects
+
+function extractGithubUrl() {
+	console.log("Extracting GitHub URL...");
+
+	// Define a regex pattern for GitHub URLs
+	const githubUrlRegex = /https:\/\/github\.com\/[\w-]+\/[\w-]+/;
+	let githubUrl = null;
+
+	// Method 1: Look for direct links in elements with class 'description' or similar
+	const descriptionElements = document.querySelectorAll(
+		'div[class*="description"], div[class*="text"], p'
+	);
+	descriptionElements.forEach((element) => {
+		const match = element.textContent.match(githubUrlRegex);
+		if (match) {
+			githubUrl = match[0];
+			console.log("Found GitHub URL:", githubUrl);
+		}
+	});
+
+	// Method 2: Search through all text nodes if Method 1 fails
+	if (!githubUrl) {
+		const walker = document.createTreeWalker(
+			document.body,
+			NodeFilter.SHOW_TEXT,
+			null,
+			false
+		);
+		let node;
+		while ((node = walker.nextNode())) {
+			const match = node.textContent.match(githubUrlRegex);
+			if (match) {
+				githubUrl = match[0];
+				console.log("Found GitHub URL in text node:", githubUrl);
+				break;
+			}
+		}
 	}
-});
+
+	if (!githubUrl) {
+		console.error("Could not find a GitHub URL in the project description");
+		throw new Error("Could not find a GitHub URL in the project description");
+	}
+
+	return githubUrl;
+}
+
+function getFileInputElement() {
+	const fileInputSelector = 'input[data-testid="project-doc-upload"]';
+	const fileInputElement = document.querySelector(fileInputSelector);
+
+	if (!fileInputElement) {
+		console.error("Could not find file input element.");
+		throw new Error("Could not find file input element for uploading files.");
+	}
+
+	return fileInputElement;
+}
+
+async function uploadFileDirectly(fileContent, fileName) {
+	console.log("Preparing to upload file directly...");
+
+	const fileInputElement = getFileInputElement();
+
+	// Create a File object
+	const file = new File([fileContent], fileName, {
+		type: "text/plain", // Adjust MIME type as needed
+	});
+
+	// Create a DataTransfer object
+	const dataTransfer = new DataTransfer();
+	dataTransfer.items.add(file);
+	fileInputElement.files = dataTransfer.files;
+
+	// Dispatch a change event
+	const event = new Event("change", { bubbles: true });
+	fileInputElement.dispatchEvent(event);
+
+	console.log(`File ${fileName} uploaded directly.`);
+}
+
+function getClaudeFiles() {
+	console.log("Attempting to get Claude files...");
+
+	// Use XPath to select file elements
+	const fileXPath =
+		"/html/body/div[2]/div/div/main/div[2]/div/div/div[2]/ul/li";
+	const fileElements = document.evaluate(
+		fileXPath,
+		document,
+		null,
+		XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+		null
+	);
+
+	if (fileElements.snapshotLength === 0) {
+		console.log("No files found in the knowledge base.");
+		return []; // Return an empty array if no files are found
+	}
+
+	const files = [];
+	for (let i = 0; i < fileElements.snapshotLength; i++) {
+		const el = fileElements.snapshotItem(i);
+		const nameElement = el.querySelector(".min-w-0.flex-1 .line-clamp-2");
+		const typeElement = el.querySelector("[data-testid]");
+		const dateElement = el.querySelector(".text-text-400");
+
+		// Extract display name
+		const displayName = nameElement
+			? nameElement.textContent.trim()
+			: "Unknown";
+
+		// Extract file type from data-testid
+		const dataTestId = typeElement
+			? typeElement.getAttribute("data-testid")
+			: "";
+
+		// The full name can be extracted directly from data-testid
+		const fullName = dataTestId || displayName;
+
+		// Extract last modified date
+		const lastModified = dateElement
+			? dateElement.textContent.trim()
+			: "Unknown";
+
+		console.log(
+			`File ${i}: name="${fullName}", lastModified="${lastModified}"`
+		);
+
+		// Push file details into the files array
+		files.push({
+			name: fullName,
+			lastModified,
+			removeButton: el.querySelector(
+				'button[aria-label="Remove from project knowledge"]'
+			),
+		});
+	}
+
+	return files;
+}
+
+async function removeOldFiles() {
+	console.log("Removing old files...");
+
+	const claudeFiles = getClaudeFiles();
+	for (const file of claudeFiles) {
+		if (file.removeButton) {
+			console.log(`Removing file: ${file.name}`);
+			file.removeButton.click();
+			await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for the removal to complete
+		}
+	}
+
+	console.log("All old files removed.");
+}
 
 async function updateProject() {
 	try {
+		console.log("Starting project update...");
 		const githubUrl = extractGithubUrl();
-		const claudeFiles = getClaudeFiles();
+		console.log("Extracted GitHub URL:", githubUrl);
+
+		await removeOldFiles();
 
 		chrome.runtime.sendMessage(
 			{ action: "fetchGitHub", repoUrl: githubUrl },
@@ -18,7 +173,8 @@ async function updateProject() {
 				}
 
 				const githubFiles = response.files;
-				await updateFiles(claudeFiles, githubFiles);
+				console.log("GitHub files:", githubFiles);
+				await updateFiles(githubFiles);
 			}
 		);
 	} catch (error) {
@@ -26,148 +182,17 @@ async function updateProject() {
 	}
 }
 
-function extractGithubUrl() {
-	const descriptionElement = document.evaluate(
-		"/html/body/div[2]/div/div/main/div[1]/div[1]/div[2]",
-		document,
-		null,
-		XPathResult.FIRST_ORDERED_NODE_TYPE,
-		null
-	).singleNodeValue;
-
-	if (!descriptionElement) {
-		throw new Error("Could not find project description element");
-	}
-
-	return descriptionElement.textContent.trim();
-}
-
-function getClaudeFiles() {
-	const fileListElement = document.evaluate(
-		"/html/body/div[2]/div/div/main/div[2]/div/div/div[2]/ul",
-		document,
-		null,
-		XPathResult.FIRST_ORDERED_NODE_TYPE,
-		null
-	).singleNodeValue;
-
-	if (!fileListElement) {
-		throw new Error("Could not find file list element");
-	}
-
-	const fileElements = fileListElement.querySelectorAll("li");
-	return Array.from(fileElements).map((el) => ({
-		name: el.querySelector(".text-sm").textContent.trim(),
-		lastModified: el.querySelector(".text-text-400").textContent.trim(),
-	}));
-}
-
-async function updateFiles(claudeFiles, githubFiles) {
+async function updateFiles(githubFiles) {
 	for (const githubFile of githubFiles) {
-		const claudeFile = claudeFiles.find((cf) => cf.name === githubFile.name);
-		if (
-			!claudeFile ||
-			isGithubFileNewer(githubFile.last_modified, claudeFile.lastModified)
-		) {
-			await uploadToClaudeAI(githubFile);
-		}
+		await uploadFileDirectly(githubFile.content, githubFile.name);
 	}
 }
 
-function isGithubFileNewer(githubDate, claudeDate) {
-	const now = new Date();
-	const daysAgo = parseInt(claudeDate.split(" ")[0]);
-	const claudeFileDate = new Date(now - daysAgo * 24 * 60 * 60 * 1000);
-
-	return new Date(githubDate) > claudeFileDate;
-}
-
-async function uploadToClaudeAI(file) {
-	console.log(`Uploading file: ${file.name}`);
-
-	const addContentButton = await waitForElement(
-		"/html/body/div[2]/div/div/main/div[2]/div/div/div[1]/button"
-	);
-	addContentButton.click();
-
-	const uploadOption = await waitForElement("button", (button) =>
-		button.textContent.includes("Upload")
-	);
-	uploadOption.click();
-
-	const fileInput = await waitForElement('input[type="file"]');
-	const fileBlob = new Blob([file.content], { type: "text/plain" });
-	const fileList = new DataTransfer();
-	fileList.items.add(new File([fileBlob], file.name));
-	fileInput.files = fileList.files;
-
-	const event = new Event("change", { bubbles: true });
-	fileInput.dispatchEvent(event);
-
-	// Wait for the upload progress indicator to appear and then disappear
-	await waitForElement(".upload-progress-indicator");
-	await waitForElementToDisappear(".upload-progress-indicator");
-
-	const confirmButton = await waitForElement("button", (button) =>
-		button.textContent.includes("Add to Project")
-	);
-	confirmButton.click();
-
-	// Wait for the file to appear in the file list
-	await waitForElement(`li[data-testid="${file.name}"]`);
-
-	console.log(`File uploaded: ${file.name}`);
-}
-
-// Helper function to wait for an element to appear
-function waitForElement(selector, condition = null, timeout = 10000) {
-	return new Promise((resolve, reject) => {
-		const startTime = Date.now();
-
-		function checkElement() {
-			const element =
-				typeof selector === "string"
-					? document.querySelector(selector)
-					: document.evaluate(
-							selector,
-							document,
-							null,
-							XPathResult.FIRST_ORDERED_NODE_TYPE,
-							null
-					  ).singleNodeValue;
-
-			if (element && (!condition || condition(element))) {
-				resolve(element);
-			} else if (Date.now() - startTime > timeout) {
-				reject(new Error(`Timeout waiting for element: ${selector}`));
-			} else {
-				setTimeout(checkElement, 100);
-			}
-		}
-
-		checkElement();
-	});
-}
-
-// Helper function to wait for an element to disappear
-function waitForElementToDisappear(selector, timeout = 30000) {
-	return new Promise((resolve, reject) => {
-		const startTime = Date.now();
-
-		function checkElementGone() {
-			const element = document.querySelector(selector);
-
-			if (!element) {
-				resolve();
-			} else if (Date.now() - startTime > timeout) {
-				reject(
-					new Error(`Timeout waiting for element to disappear: ${selector}`)
-				);
-			} else {
-				setTimeout(checkElementGone, 100);
-			}
-		}
-
-		checkElementGone();
-	});
-}
+chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+	if (request.action === "updateProject") {
+		console.log("Received update project request");
+		updateProject();
+		sendResponse({ status: "success" });
+		return true; // Indicates we will send a response asynchronously
+	}
+});

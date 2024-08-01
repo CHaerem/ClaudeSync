@@ -1,13 +1,28 @@
+<!-- popup.html -->
 <!DOCTYPE html>
 <html>
 	<head>
 		<title>Claude Project Updater</title>
-		<link rel="stylesheet" type="text/css" href="styles.css" />
+		<style>
+			body {
+				width: 300px;
+				padding: 10px;
+				font-family: Arial, sans-serif;
+			}
+			button {
+				width: 100%;
+				margin-top: 10px;
+			}
+		</style>
 	</head>
 	<body>
-		<h1>Claude Project Updater</h1>
+		<h2>Claude Project Updater</h2>
+		<p>
+			Update your Claude project with files from a public GitHub repository.
+		</p>
 		<button id="updateButton">Update Project</button>
 		<div id="status"></div>
+
 		<script src="popup.js"></script>
 	</body>
 </html>
