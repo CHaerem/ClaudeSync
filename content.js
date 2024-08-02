@@ -112,8 +112,20 @@ function getFileInputElement() {
 	return fileInputElement;
 }
 
+function isFileTypeAllowed(fileName) {
+	const fileInputElement = getFileInputElement();
+	const allowedExtensions = fileInputElement.accept.split(",");
+	const fileExtension = "." + fileName.split(".").pop().toLowerCase();
+	return allowedExtensions.includes(fileExtension);
+}
+
 async function uploadFileDirectly(fileContent, fileName) {
-	console.log("Preparing to upload file directly...");
+	console.log(`Preparing to upload file: ${fileName}`);
+
+	if (!isFileTypeAllowed(fileName)) {
+		console.warn(`File type not allowed for ${fileName}. Skipping upload.`);
+		return;
+	}
 
 	const fileInputElement = getFileInputElement();
 
