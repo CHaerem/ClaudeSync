@@ -5,11 +5,10 @@ function extractGithubUrl() {
 	const githubUrlRegex = /https:\/\/github\.com\/[\w-]+\/[\w-]+/;
 	let githubUrl = null;
 
-	// Look for direct links in elements with class 'description' or similar
 	const descriptionElements = document.querySelectorAll(
 		'div[class*="description"], div[class*="text"], p'
 	);
-	descriptionElements.forEach((element, index) => {
+	descriptionElements.forEach((element) => {
 		const match = element.textContent.match(githubUrlRegex);
 		if (match) {
 			githubUrl = match[0];
@@ -28,35 +27,22 @@ function extractGithubUrl() {
 function createSyncButton() {
 	console.log("Creating sync button");
 	const button = document.createElement("button");
-	button.innerHTML =
-		'<img src="' +
-		chrome.runtime.getURL("sync-icon.png") +
-		'" alt="Sync" style="width: 24px; height: 24px;">';
-	button.style.cssText = `
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        z-index: 99999;
-        padding: 8px;
-        background-color: #ff0000;
-        border: 3px solid #000000;
-        border-radius: 50%;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        transition: all 0.3s ease;
+	button.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256" class="sync-icon">
+            <path d="M224,128a95.76,95.76,0,0,1-31.8,71.37A72,72,0,0,1,128,232a8,8,0,0,1,0-16,56.06,56.06,0,0,0,50.2-31.06A79.51,79.51,0,0,1,136,200h-1.62A80,80,0,1,1,196.8,59.06,8,8,0,0,1,190.31,74,64,64,0,1,0,207.6,169.64,96,96,0,1,1,224,128Zm-24-64a8,8,0,0,0-8,8v56a8,8,0,0,0,8,8h56a8,8,0,0,0,5.66-13.66l-16-16a96.15,96.15,0,0,1,1.63,17.66,8,8,0,0,0,16,0,80.21,80.21,0,0,0-2.39-19.4L248,92.69A8,8,0,0,0,240,80Z"/>
+        </svg>
+        <span>Sync</span>
     `;
+	button.id = "github-sync-button";
+	button.className = `
+        inline-flex items-center justify-center
+        text-text-300 hover:text-text-100
+        px-2 py-1 rounded-lg hover:bg-bg-400/50 transition-colors duration-200
+        focus:outline-none focus:ring-2 focus:ring-accent-main-100 focus:ring-offset-2
+        text-sm font-medium gap-1
+    `;
+	button.title = "Sync with GitHub";
 	button.addEventListener("click", updateProject);
-	button.addEventListener("mouseover", () => {
-		button.style.backgroundColor = "#4CAF50";
-		button.querySelector("img").style.filter = "brightness(0) invert(1)";
-	});
-	button.addEventListener("mouseout", () => {
-		button.style.backgroundColor = "#ff0000";
-		button.querySelector("img").style.filter = "none";
-	});
 	return button;
 }
 
@@ -68,10 +54,16 @@ function addSyncButton() {
 		return;
 	}
 
-	const button = createSyncButton();
-	button.id = "github-sync-button";
-	document.body.appendChild(button);
-	console.log("Sync button added to the page");
+	const descriptionElement = document.querySelector(
+		".text-text-300.text-sm.leading-relaxed.line-clamp-2"
+	);
+	if (descriptionElement) {
+		const button = createSyncButton();
+		descriptionElement.parentNode.insertBefore(button, descriptionElement);
+		console.log("Sync button added before GitHub URL description");
+	} else {
+		console.log("Could not find GitHub URL description to add sync button");
+	}
 }
 
 function checkForGithubUrl() {
@@ -79,32 +71,29 @@ function checkForGithubUrl() {
 	const existingButton = document.getElementById("github-sync-button");
 	if (existingButton) {
 		console.log("Sync button already exists, skipping check");
-		return true; // Button already exists, no need to check further
+		return true;
 	}
 
 	const url = extractGithubUrl();
 	if (url) {
 		console.log("GitHub URL found:", url);
 		addSyncButton();
-		return true; // URL found and button added
+		return true;
 	} else {
 		console.log("No GitHub URL found in project description");
-		return false; // URL not found
+		return false;
 	}
 }
 
-// Set up a MutationObserver to watch for changes in the DOM
 const observer = new MutationObserver((mutations) => {
 	if (checkForGithubUrl()) {
 		console.log("GitHub URL found and button added, stopping observer");
-		observer.disconnect(); // Stop observing once the button is added
+		observer.disconnect();
 	}
 });
 
-// Start observing the document with the configured parameters
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Also run the check when the script loads, in case the content is already there
 if (checkForGithubUrl()) {
 	console.log("GitHub URL found on initial load, not starting observer");
 } else {
@@ -128,17 +117,12 @@ async function uploadFileDirectly(fileContent, fileName) {
 
 	const fileInputElement = getFileInputElement();
 
-	// Create a File object
-	const file = new File([fileContent], fileName, {
-		type: "text/plain", // Adjust MIME type as needed
-	});
+	const file = new File([fileContent], fileName, { type: "text/plain" });
 
-	// Create a DataTransfer object
 	const dataTransfer = new DataTransfer();
 	dataTransfer.items.add(file);
 	fileInputElement.files = dataTransfer.files;
 
-	// Dispatch a change event
 	const event = new Event("change", { bubbles: true });
 	fileInputElement.dispatchEvent(event);
 
@@ -148,7 +132,6 @@ async function uploadFileDirectly(fileContent, fileName) {
 function getClaudeFiles() {
 	console.log("Attempting to get Claude files...");
 
-	// Use XPath to select file elements
 	const fileXPath =
 		"/html/body/div[2]/div/div/main/div[2]/div/div/div[2]/ul/li";
 	const fileElements = document.evaluate(
@@ -161,7 +144,7 @@ function getClaudeFiles() {
 
 	if (fileElements.snapshotLength === 0) {
 		console.log("No files found in the knowledge base.");
-		return []; // Return an empty array if no files are found
+		return [];
 	}
 
 	const files = [];
@@ -171,20 +154,13 @@ function getClaudeFiles() {
 		const typeElement = el.querySelector("[data-testid]");
 		const dateElement = el.querySelector(".text-text-400");
 
-		// Extract display name
 		const displayName = nameElement
 			? nameElement.textContent.trim()
 			: "Unknown";
-
-		// Extract file type from data-testid
 		const dataTestId = typeElement
 			? typeElement.getAttribute("data-testid")
 			: "";
-
-		// The full name can be extracted directly from data-testid
 		const fullName = dataTestId || displayName;
-
-		// Extract last modified date
 		const lastModified = dateElement
 			? dateElement.textContent.trim()
 			: "Unknown";
@@ -193,7 +169,6 @@ function getClaudeFiles() {
 			`File ${i}: name="${fullName}", lastModified="${lastModified}"`
 		);
 
-		// Push file details into the files array
 		files.push({
 			name: fullName,
 			lastModified,
@@ -209,9 +184,8 @@ function getClaudeFiles() {
 async function updateProject() {
 	const button = document.getElementById("github-sync-button");
 	if (button) {
-		button.style.pointerEvents = "none";
-		button.style.opacity = "0.5";
-		button.querySelector("img").style.animation = "spin 1s linear infinite";
+		button.disabled = true;
+		button.querySelector(".sync-icon").classList.add("spinning");
 	}
 
 	try {
@@ -250,7 +224,6 @@ async function updateProject() {
 				} finally {
 					if (button) {
 						button.style.pointerEvents = "auto";
-						button.style.opacity = "1";
 						button.querySelector("img").style.animation = "none";
 					}
 				}
@@ -259,23 +232,17 @@ async function updateProject() {
 	} catch (error) {
 		console.error("Error updating project:", error);
 		alert("Error updating project: " + error.message);
-
+	} finally {
 		if (button) {
-			button.style.pointerEvents = "auto";
-			button.style.opacity = "1";
-			button.querySelector("img").style.animation = "none";
+			button.disabled = false;
+			button.querySelector(".sync-icon").classList.remove("spinning");
 		}
 	}
 }
 
 async function syncFiles(claudeFiles, githubFiles) {
-	// Remove duplicates from Claude files
 	await removeDuplicates(claudeFiles);
-
-	// Remove files that are not in GitHub
 	await removeDeletedFiles(claudeFiles, githubFiles);
-
-	// Update or add files from GitHub
 	await updateFiles(claudeFiles, githubFiles);
 }
 
@@ -316,10 +283,8 @@ async function updateFiles(claudeFiles, githubFiles) {
 			console.log(`Adding new file: ${githubFile.name}`);
 			await uploadFileDirectly(githubFile.content, githubFile.name);
 		} else {
-			// Always update the file if we can't reliably compare dates
 			let shouldUpdate = true;
 
-			// If we have valid dates for both files, compare them
 			if (githubFile.lastModified && claudeFile.lastModified) {
 				const githubDate = new Date(githubFile.lastModified);
 				const claudeDate = new Date(claudeFile.lastModified);
@@ -344,16 +309,18 @@ async function removeFile(file) {
 	if (file.removeButton) {
 		console.log(`Removing file: ${file.name}`);
 		file.removeButton.click();
-		await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for the removal to complete
+		await new Promise((resolve) => setTimeout(resolve, 1000));
 	}
 }
 
-// Add this CSS to the document
 const style = document.createElement("style");
 style.textContent = `
     @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+    }
+    .spinning {
+        animation: spin 1s linear infinite;
     }
 `;
 document.head.appendChild(style);
