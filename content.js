@@ -1,31 +1,22 @@
 console.log("Claude Project Updater: Content script loaded");
 
 function extractGithubUrl() {
-	console.log("Attempting to extract GitHub URL");
 	const githubUrlRegex = /https:\/\/github\.com\/[\w-]+\/[\w-]+/;
-	let githubUrl = null;
-
 	const descriptionElements = document.querySelectorAll(
 		'div[class*="description"], div[class*="text"], p'
 	);
-	descriptionElements.forEach((element) => {
+
+	for (const element of descriptionElements) {
 		const match = element.textContent.match(githubUrlRegex);
 		if (match) {
-			githubUrl = match[0];
-			console.log("Found GitHub URL:", githubUrl);
+			return match[0];
 		}
-	});
-
-	if (!githubUrl) {
-		console.log("Could not find a GitHub URL in the project description");
-		return null;
 	}
 
-	return githubUrl;
+	return null;
 }
 
 function createSyncButton() {
-	console.log("Creating sync button");
 	const button = document.createElement("button");
 	button.innerHTML = `
         <img src="${chrome.runtime.getURL(
@@ -47,12 +38,8 @@ function createSyncButton() {
 }
 
 function addSyncButton() {
-	console.log("Adding sync button");
 	const existingButton = document.getElementById("github-sync-button");
-	if (existingButton) {
-		console.log("Button already exists, not adding another");
-		return;
-	}
+	if (existingButton) return;
 
 	const descriptionElement = document.querySelector(
 		".text-text-300.text-sm.leading-relaxed.line-clamp-2"
@@ -60,55 +47,41 @@ function addSyncButton() {
 	if (descriptionElement) {
 		const button = createSyncButton();
 		descriptionElement.parentNode.insertBefore(button, descriptionElement);
-		console.log("Sync button added before GitHub URL description");
-	} else {
-		console.log("Could not find GitHub URL description to add sync button");
+		console.log("Sync button added");
 	}
 }
 
 function checkForGithubUrl() {
-	console.log("Checking for GitHub URL");
 	const existingButton = document.getElementById("github-sync-button");
-	if (existingButton) {
-		console.log("Sync button already exists, skipping check");
-		return true;
-	}
+	if (existingButton) return true;
 
 	const url = extractGithubUrl();
 	if (url) {
-		console.log("GitHub URL found:", url);
 		addSyncButton();
 		return true;
-	} else {
-		console.log("No GitHub URL found in project description");
-		return false;
 	}
+	return false;
 }
 
 const observer = new MutationObserver((mutations) => {
 	if (checkForGithubUrl()) {
-		console.log("GitHub URL found and button added, stopping observer");
 		observer.disconnect();
 	}
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
 
-if (checkForGithubUrl()) {
-	console.log("GitHub URL found on initial load, not starting observer");
-} else {
+if (!checkForGithubUrl()) {
 	console.log("GitHub URL not found on initial load, starting observer");
 }
 
 function getFileInputElement() {
-	const fileInputSelector = 'input[data-testid="project-doc-upload"]';
-	const fileInputElement = document.querySelector(fileInputSelector);
-
+	const fileInputElement = document.querySelector(
+		'input[data-testid="project-doc-upload"]'
+	);
 	if (!fileInputElement) {
-		console.error("Could not find file input element.");
 		throw new Error("Could not find file input element for uploading files.");
 	}
-
 	return fileInputElement;
 }
 
@@ -120,30 +93,26 @@ function isFileTypeAllowed(fileName) {
 }
 
 async function uploadFileDirectly(fileContent, fileName) {
-	console.log(`Preparing to upload file: ${fileName}`);
-
 	if (!isFileTypeAllowed(fileName)) {
-		console.warn(`File type not allowed for ${fileName}. Skipping upload.`);
+		console.log(`Skipping upload: File type not allowed for ${fileName}`);
 		return;
 	}
 
 	const fileInputElement = getFileInputElement();
-
 	const file = new File([fileContent], fileName, { type: "text/plain" });
-
 	const dataTransfer = new DataTransfer();
 	dataTransfer.items.add(file);
 	fileInputElement.files = dataTransfer.files;
-
 	const event = new Event("change", { bubbles: true });
 	fileInputElement.dispatchEvent(event);
 
-	console.log(`File ${fileName} uploaded directly.`);
+	// Wait for a short time to ensure the upload is processed
+	await new Promise((resolve) => setTimeout(resolve, 500));
+
+	console.log(`Uploaded: ${fileName}`);
 }
 
 function getClaudeFiles() {
-	console.log("Attempting to get Claude files...");
-
 	const fileXPath =
 		"/html/body/div[2]/div/div/main/div[2]/div/div/div[2]/ul/li";
 	const fileElements = document.evaluate(
@@ -154,42 +123,23 @@ function getClaudeFiles() {
 		null
 	);
 
-	if (fileElements.snapshotLength === 0) {
-		console.log("No files found in the knowledge base.");
-		return [];
-	}
-
 	const files = [];
 	for (let i = 0; i < fileElements.snapshotLength; i++) {
 		const el = fileElements.snapshotItem(i);
 		const nameElement = el.querySelector(".min-w-0.flex-1 .line-clamp-2");
-		const typeElement = el.querySelector("[data-testid]");
-		const dateElement = el.querySelector(".text-text-400");
-
-		const displayName = nameElement
-			? nameElement.textContent.trim()
-			: "Unknown";
-		const dataTestId = typeElement
-			? typeElement.getAttribute("data-testid")
-			: "";
-		const fullName = dataTestId || displayName;
-		const lastModified = dateElement
-			? dateElement.textContent.trim()
-			: "Unknown";
-
-		console.log(
-			`File ${i}: name="${fullName}", lastModified="${lastModified}"`
+		const removeButton = el.querySelector(
+			'button[aria-label="Remove from project knowledge"]'
 		);
 
-		files.push({
-			name: fullName,
-			lastModified,
-			removeButton: el.querySelector(
-				'button[aria-label="Remove from project knowledge"]'
-			),
-		});
+		if (nameElement && removeButton) {
+			files.push({
+				name: nameElement.textContent.trim(),
+				removeButton: removeButton,
+			});
+		}
 	}
 
+	console.log(`Found ${files.length} files in Claude project`);
 	return files;
 }
 
@@ -203,8 +153,6 @@ async function updateProject() {
 	try {
 		console.log("Starting project update...");
 		const githubUrl = extractGithubUrl();
-		console.log("Extracted GitHub URL:", githubUrl);
-
 		if (!githubUrl) {
 			throw new Error("No GitHub URL found in project description");
 		}
@@ -226,17 +174,18 @@ async function updateProject() {
 					}
 
 					const githubFiles = response.files;
-					console.log("GitHub files:", githubFiles);
+					console.log(`Fetched ${githubFiles.length} files from GitHub`);
 
 					await syncFiles(claudeFiles, githubFiles);
+					console.log("Project successfully synced with GitHub");
 					alert("Project successfully synced with GitHub!");
 				} catch (error) {
 					console.error("Error processing GitHub files:", error);
 					alert("Error processing GitHub files: " + error.message);
 				} finally {
 					if (button) {
-						button.style.pointerEvents = "auto";
-						button.querySelector("img").style.animation = "none";
+						button.disabled = false;
+						button.querySelector(".sync-icon").classList.remove("spinning");
 					}
 				}
 			}
@@ -244,7 +193,6 @@ async function updateProject() {
 	} catch (error) {
 		console.error("Error updating project:", error);
 		alert("Error updating project: " + error.message);
-	} finally {
 		if (button) {
 			button.disabled = false;
 			button.querySelector(".sync-icon").classList.remove("spinning");
@@ -253,76 +201,45 @@ async function updateProject() {
 }
 
 async function syncFiles(claudeFiles, githubFiles) {
-	await removeDuplicates(claudeFiles);
-	await removeDeletedFiles(claudeFiles, githubFiles);
-	await updateFiles(claudeFiles, githubFiles);
-}
+	console.log("Starting file synchronization...");
 
-async function removeDuplicates(claudeFiles) {
-	console.log("Removing duplicate files...");
-	const uniqueFiles = new Map();
+	// Step 1: Remove all files from Claude
+	console.log("Removing all files from Claude...");
+	const removalPromises = claudeFiles.map((file) => removeFile(file));
+	await Promise.all(removalPromises);
+	console.log(`Removed ${claudeFiles.length} files from Claude`);
 
-	for (const file of claudeFiles) {
-		if (uniqueFiles.has(file.name)) {
-			console.log(`Found duplicate: ${file.name}. Removing...`);
-			await removeFile(file);
+	// Step 2: Upload all files from GitHub
+	console.log("Uploading files from GitHub...");
+	let uploadedCount = 0;
+	let skippedCount = 0;
+	for (const file of githubFiles) {
+		if (isFileTypeAllowed(file.name)) {
+			await uploadFileDirectly(file.content, file.name);
+			uploadedCount++;
 		} else {
-			uniqueFiles.set(file.name, file);
+			console.log(`Skipping upload: File type not allowed for ${file.name}`);
+			skippedCount++;
 		}
 	}
-}
+	console.log(`Uploaded ${uploadedCount} files to Claude`);
+	console.log(`Skipped ${skippedCount} files due to unsupported file types`);
 
-async function removeDeletedFiles(claudeFiles, githubFiles) {
-	console.log("Removing deleted files...");
-	const githubFileNames = new Set(githubFiles.map((file) => file.name));
-
-	for (const claudeFile of claudeFiles) {
-		if (!githubFileNames.has(claudeFile.name)) {
-			console.log(`File ${claudeFile.name} not found in GitHub. Removing...`);
-			await removeFile(claudeFile);
-		}
-	}
-}
-
-async function updateFiles(claudeFiles, githubFiles) {
-	console.log("Updating files...");
-	const claudeFileMap = new Map(claudeFiles.map((file) => [file.name, file]));
-
-	for (const githubFile of githubFiles) {
-		const claudeFile = claudeFileMap.get(githubFile.name);
-
-		if (!claudeFile) {
-			console.log(`Adding new file: ${githubFile.name}`);
-			await uploadFileDirectly(githubFile.content, githubFile.name);
-		} else {
-			let shouldUpdate = true;
-
-			if (githubFile.lastModified && claudeFile.lastModified) {
-				const githubDate = new Date(githubFile.lastModified);
-				const claudeDate = new Date(claudeFile.lastModified);
-
-				if (!isNaN(githubDate) && !isNaN(claudeDate)) {
-					shouldUpdate = githubDate > claudeDate;
-				}
-			}
-
-			if (shouldUpdate) {
-				console.log(`Updating file: ${githubFile.name}`);
-				await removeFile(claudeFile);
-				await uploadFileDirectly(githubFile.content, githubFile.name);
-			} else {
-				console.log(`File ${githubFile.name} is up to date. Skipping.`);
-			}
-		}
-	}
+	console.log("File synchronization completed");
 }
 
 async function removeFile(file) {
-	if (file.removeButton) {
-		console.log(`Removing file: ${file.name}`);
-		file.removeButton.click();
-		await new Promise((resolve) => setTimeout(resolve, 1000));
-	}
+	return new Promise((resolve) => {
+		if (file.removeButton) {
+			file.removeButton.click();
+			setTimeout(() => {
+				console.log(`Removed: ${file.name}`);
+				resolve();
+			}, 1000);
+		} else {
+			resolve();
+		}
+	});
 }
 
 const style = document.createElement("style");
