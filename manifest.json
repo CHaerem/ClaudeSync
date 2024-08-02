@@ -21,11 +21,11 @@
     }
   ],
   "web_accessible_resources": [{
-    "resources": ["sync-icon.png"],
+    "resources": ["icon.svg"],
     "matches": ["https://claude.ai/*"]
   }],
   "icons": {
-    "48": "sync-icon.png",
-    "128": "sync-icon.png"
+    "48": "icon48.png",
+    "128": "icon128.png"
   }
 }

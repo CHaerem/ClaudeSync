@@ -48,4 +48,4 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 
 ## Credits
 
-Icon created by [Freepik - Flaticon](https://www.flaticon.com/free-icons/sync)
+Icon downloaded from [iconscout](https://iconscout.com/free-icon/sync-1780790)

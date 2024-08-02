@@ -28,9 +28,9 @@ function createSyncButton() {
 	console.log("Creating sync button");
 	const button = document.createElement("button");
 	button.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256" class="sync-icon">
-            <path d="M224,128a95.76,95.76,0,0,1-31.8,71.37A72,72,0,0,1,128,232a8,8,0,0,1,0-16,56.06,56.06,0,0,0,50.2-31.06A79.51,79.51,0,0,1,136,200h-1.62A80,80,0,1,1,196.8,59.06,8,8,0,0,1,190.31,74,64,64,0,1,0,207.6,169.64,96,96,0,1,1,224,128Zm-24-64a8,8,0,0,0-8,8v56a8,8,0,0,0,8,8h56a8,8,0,0,0,5.66-13.66l-16-16a96.15,96.15,0,0,1,1.63,17.66,8,8,0,0,0,16,0,80.21,80.21,0,0,0-2.39-19.4L248,92.69A8,8,0,0,0,240,80Z"/>
-        </svg>
+        <img src="${chrome.runtime.getURL(
+					"icon.svg"
+				)}" alt="Sync" class="sync-icon" width="16" height="16">
         <span>Sync</span>
     `;
 	button.id = "github-sync-button";
