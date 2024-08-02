@@ -42,10 +42,6 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 3. Make your changes to the source code.
 4. Load the extension in Chrome as described in the Installation section.
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 ## License
 
 [MIT License](LICENSE)
@@ -53,7 +49,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Credits
 
 Icon created by [Freepik - Flaticon](https://www.flaticon.com/free-icons/sync)
-
-## Contact
-
-If you have any questions, feel free to reach out to [Your Name](mailto:your.email@example.com).
