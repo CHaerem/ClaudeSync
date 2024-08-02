@@ -1,17 +1,15 @@
-// Content script for updating Claude.ai projects
+console.log("Claude Project Updater: Content script loaded");
 
 function extractGithubUrl() {
-	console.log("Extracting GitHub URL...");
-
-	// Define a regex pattern for GitHub URLs
+	console.log("Attempting to extract GitHub URL");
 	const githubUrlRegex = /https:\/\/github\.com\/[\w-]+\/[\w-]+/;
 	let githubUrl = null;
 
-	// Method 1: Look for direct links in elements with class 'description' or similar
+	// Look for direct links in elements with class 'description' or similar
 	const descriptionElements = document.querySelectorAll(
 		'div[class*="description"], div[class*="text"], p'
 	);
-	descriptionElements.forEach((element) => {
+	descriptionElements.forEach((element, index) => {
 		const match = element.textContent.match(githubUrlRegex);
 		if (match) {
 			githubUrl = match[0];
@@ -19,31 +17,98 @@ function extractGithubUrl() {
 		}
 	});
 
-	// Method 2: Search through all text nodes if Method 1 fails
 	if (!githubUrl) {
-		const walker = document.createTreeWalker(
-			document.body,
-			NodeFilter.SHOW_TEXT,
-			null,
-			false
-		);
-		let node;
-		while ((node = walker.nextNode())) {
-			const match = node.textContent.match(githubUrlRegex);
-			if (match) {
-				githubUrl = match[0];
-				console.log("Found GitHub URL in text node:", githubUrl);
-				break;
-			}
-		}
-	}
-
-	if (!githubUrl) {
-		console.error("Could not find a GitHub URL in the project description");
-		throw new Error("Could not find a GitHub URL in the project description");
+		console.log("Could not find a GitHub URL in the project description");
+		return null;
 	}
 
 	return githubUrl;
+}
+
+function createSyncButton() {
+	console.log("Creating sync button");
+	const button = document.createElement("button");
+	button.innerHTML =
+		'<img src="' +
+		chrome.runtime.getURL("sync-icon.png") +
+		'" alt="Sync" style="width: 24px; height: 24px;">';
+	button.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 99999;
+        padding: 8px;
+        background-color: #ff0000;
+        border: 3px solid #000000;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+    `;
+	button.addEventListener("click", updateProject);
+	button.addEventListener("mouseover", () => {
+		button.style.backgroundColor = "#4CAF50";
+		button.querySelector("img").style.filter = "brightness(0) invert(1)";
+	});
+	button.addEventListener("mouseout", () => {
+		button.style.backgroundColor = "#ff0000";
+		button.querySelector("img").style.filter = "none";
+	});
+	return button;
+}
+
+function addSyncButton() {
+	console.log("Adding sync button");
+	const existingButton = document.getElementById("github-sync-button");
+	if (existingButton) {
+		console.log("Button already exists, not adding another");
+		return;
+	}
+
+	const button = createSyncButton();
+	button.id = "github-sync-button";
+	document.body.appendChild(button);
+	console.log("Sync button added to the page");
+}
+
+function checkForGithubUrl() {
+	console.log("Checking for GitHub URL");
+	const existingButton = document.getElementById("github-sync-button");
+	if (existingButton) {
+		console.log("Sync button already exists, skipping check");
+		return true; // Button already exists, no need to check further
+	}
+
+	const url = extractGithubUrl();
+	if (url) {
+		console.log("GitHub URL found:", url);
+		addSyncButton();
+		return true; // URL found and button added
+	} else {
+		console.log("No GitHub URL found in project description");
+		return false; // URL not found
+	}
+}
+
+// Set up a MutationObserver to watch for changes in the DOM
+const observer = new MutationObserver((mutations) => {
+	if (checkForGithubUrl()) {
+		console.log("GitHub URL found and button added, stopping observer");
+		observer.disconnect(); // Stop observing once the button is added
+	}
+});
+
+// Start observing the document with the configured parameters
+observer.observe(document.body, { childList: true, subtree: true });
+
+// Also run the check when the script loads, in case the content is already there
+if (checkForGithubUrl()) {
+	console.log("GitHub URL found on initial load, not starting observer");
+} else {
+	console.log("GitHub URL not found on initial load, starting observer");
 }
 
 function getFileInputElement() {
@@ -142,29 +207,64 @@ function getClaudeFiles() {
 }
 
 async function updateProject() {
+	const button = document.getElementById("github-sync-button");
+	if (button) {
+		button.style.pointerEvents = "none";
+		button.style.opacity = "0.5";
+		button.querySelector("img").style.animation = "spin 1s linear infinite";
+	}
+
 	try {
 		console.log("Starting project update...");
 		const githubUrl = extractGithubUrl();
 		console.log("Extracted GitHub URL:", githubUrl);
+
+		if (!githubUrl) {
+			throw new Error("No GitHub URL found in project description");
+		}
 
 		const claudeFiles = getClaudeFiles();
 
 		chrome.runtime.sendMessage(
 			{ action: "fetchGitHub", repoUrl: githubUrl },
 			async function (response) {
-				if (response.error) {
-					console.error("Error fetching GitHub files:", response.error);
-					return;
+				try {
+					if (chrome.runtime.lastError) {
+						throw new Error(chrome.runtime.lastError.message);
+					}
+					if (response && response.error) {
+						throw new Error(response.error);
+					}
+					if (!response || !response.files) {
+						throw new Error("Invalid response from background script");
+					}
+
+					const githubFiles = response.files;
+					console.log("GitHub files:", githubFiles);
+
+					await syncFiles(claudeFiles, githubFiles);
+					alert("Project successfully synced with GitHub!");
+				} catch (error) {
+					console.error("Error processing GitHub files:", error);
+					alert("Error processing GitHub files: " + error.message);
+				} finally {
+					if (button) {
+						button.style.pointerEvents = "auto";
+						button.style.opacity = "1";
+						button.querySelector("img").style.animation = "none";
+					}
 				}
-
-				const githubFiles = response.files;
-				console.log("GitHub files:", githubFiles);
-
-				await syncFiles(claudeFiles, githubFiles);
 			}
 		);
 	} catch (error) {
 		console.error("Error updating project:", error);
+		alert("Error updating project: " + error.message);
+
+		if (button) {
+			button.style.pointerEvents = "auto";
+			button.style.opacity = "1";
+			button.querySelector("img").style.animation = "none";
+		}
 	}
 }
 
@@ -216,10 +316,18 @@ async function updateFiles(claudeFiles, githubFiles) {
 			console.log(`Adding new file: ${githubFile.name}`);
 			await uploadFileDirectly(githubFile.content, githubFile.name);
 		} else {
-			// Compare last modified dates if available, otherwise always update
-			const shouldUpdate =
-				!claudeFile.lastModified ||
-				new Date(githubFile.lastModified) > new Date(claudeFile.lastModified);
+			// Always update the file if we can't reliably compare dates
+			let shouldUpdate = true;
+
+			// If we have valid dates for both files, compare them
+			if (githubFile.lastModified && claudeFile.lastModified) {
+				const githubDate = new Date(githubFile.lastModified);
+				const claudeDate = new Date(claudeFile.lastModified);
+
+				if (!isNaN(githubDate) && !isNaN(claudeDate)) {
+					shouldUpdate = githubDate > claudeDate;
+				}
+			}
 
 			if (shouldUpdate) {
 				console.log(`Updating file: ${githubFile.name}`);
@@ -240,11 +348,14 @@ async function removeFile(file) {
 	}
 }
 
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
-	if (request.action === "updateProject") {
-		console.log("Received update project request");
-		updateProject();
-		sendResponse({ status: "success" });
-		return true; // Indicates we will send a response asynchronously
-	}
-});
+// Add this CSS to the document
+const style = document.createElement("style");
+style.textContent = `
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+`;
+document.head.appendChild(style);
+
+console.log("Content script fully loaded and initialized");

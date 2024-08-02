@@ -1,14 +1,16 @@
-// background.js
-
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	console.log("Background script received message:", request);
 	if (request.action === "fetchGitHub") {
 		fetchGitHubFiles(request.repoUrl)
-			.then((files) => sendResponse({ files: files }))
+			.then((files) => {
+				console.log("Fetched files:", files);
+				sendResponse({ files: files });
+			})
 			.catch((error) => {
-				console.error("Error in fetchGitHubFiles:", error);
+				console.error("Error fetching GitHub files:", error);
 				sendResponse({ error: error.message });
 			});
-		return true; // Indicates we will send a response asynchronously
+		return true; // Indicates that the response is asynchronous
 	}
 });
 
@@ -69,7 +71,7 @@ async function fetchFilesRecursively(url) {
 				name: item.path,
 				content: content,
 				sha: item.sha,
-				lastModified: item.last_modified, // Add this line to include last_modified information
+				lastModified: item.last_modified,
 			});
 		} else if (item.type === "dir") {
 			const subFiles = await fetchFilesRecursively(item.url);
@@ -79,3 +81,5 @@ async function fetchFilesRecursively(url) {
 
 	return files;
 }
+
+console.log("Background script loaded");
