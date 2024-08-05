@@ -19,7 +19,7 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 ## Usage
 
 1. Navigate to a Claude.ai project page.
-2. If the project description contains a valid GitHub URL, a sync button will appear in the top right corner of the page.
+2. If the project description contains a valid GitHub URL, a sync button will appear in above the project description. (may need to refresh page manually)
 3. Click the sync button to update your Claude.ai project with the latest files from the linked GitHub repository.
 
 ## Development
@@ -33,7 +33,7 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/claude-project-updater.git
+   git clone https://github.com/chaerem/claude-project-updater.git
    ```
 2. Navigate to the project directory:
    ```
