@@ -47,7 +47,6 @@ function addSyncButton() {
 	if (descriptionElement) {
 		const button = createSyncButton();
 		descriptionElement.parentNode.insertBefore(button, descriptionElement);
-		console.log("Sync button added");
 	}
 }
 
@@ -61,18 +60,6 @@ function checkForGithubUrl() {
 		return true;
 	}
 	return false;
-}
-
-const observer = new MutationObserver((mutations) => {
-	if (checkForGithubUrl()) {
-		observer.disconnect();
-	}
-});
-
-observer.observe(document.body, { childList: true, subtree: true });
-
-if (!checkForGithubUrl()) {
-	console.log("GitHub URL not found on initial load, starting observer");
 }
 
 function getFileInputElement() {
@@ -94,7 +81,6 @@ function isFileTypeAllowed(fileName) {
 
 async function uploadFileDirectly(fileContent, fileName) {
 	if (!isFileTypeAllowed(fileName)) {
-		console.log(`Skipping upload: File type not allowed for ${fileName}`);
 		return;
 	}
 
@@ -106,10 +92,7 @@ async function uploadFileDirectly(fileContent, fileName) {
 	const event = new Event("change", { bubbles: true });
 	fileInputElement.dispatchEvent(event);
 
-	// Wait for a short time to ensure the upload is processed
 	await new Promise((resolve) => setTimeout(resolve, 500));
-
-	console.log(`Uploaded: ${fileName}`);
 }
 
 function getClaudeFiles() {
@@ -139,7 +122,6 @@ function getClaudeFiles() {
 		}
 	}
 
-	console.log(`Found ${files.length} files in Claude project`);
 	return files;
 }
 
@@ -204,13 +186,10 @@ async function syncFiles(claudeFiles, githubFiles) {
 	console.log("Starting file synchronization...");
 
 	// Step 1: Remove all files from Claude
-	console.log("Removing all files from Claude...");
 	const removalPromises = claudeFiles.map((file) => removeFile(file));
 	await Promise.all(removalPromises);
-	console.log(`Removed ${claudeFiles.length} files from Claude`);
 
 	// Step 2: Upload all files from GitHub
-	console.log("Uploading files from GitHub...");
 	let uploadedCount = 0;
 	let skippedCount = 0;
 	for (const file of githubFiles) {
@@ -218,24 +197,17 @@ async function syncFiles(claudeFiles, githubFiles) {
 			await uploadFileDirectly(file.content, file.name);
 			uploadedCount++;
 		} else {
-			console.log(`Skipping upload: File type not allowed for ${file.name}`);
 			skippedCount++;
 		}
 	}
-	console.log(`Uploaded ${uploadedCount} files to Claude`);
-	console.log(`Skipped ${skippedCount} files due to unsupported file types`);
-
-	console.log("File synchronization completed");
+	console.log(`Uploaded ${uploadedCount} files, skipped ${skippedCount} files`);
 }
 
 async function removeFile(file) {
 	return new Promise((resolve) => {
 		if (file.removeButton) {
 			file.removeButton.click();
-			setTimeout(() => {
-				console.log(`Removed: ${file.name}`);
-				resolve();
-			}, 1000);
+			setTimeout(resolve, 1000);
 		} else {
 			resolve();
 		}
@@ -254,4 +226,81 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-console.log("Content script fully loaded and initialized");
+function handlePageChange() {
+	if (window.location.href.includes("/project/")) {
+		initializeExtension();
+	} else {
+		removeSyncButton();
+	}
+}
+
+function removeSyncButton() {
+	const existingButton = document.getElementById("github-sync-button");
+	if (existingButton) {
+		existingButton.remove();
+	}
+}
+
+function initializeExtension() {
+	if (!checkForGithubUrl()) {
+		startObserver();
+	}
+}
+
+function startObserver() {
+	const observer = new MutationObserver((mutations) => {
+		for (const mutation of mutations) {
+			if (mutation.type === "childList" || mutation.type === "subtree") {
+				if (checkForGithubUrl()) {
+					observer.disconnect();
+					return;
+				}
+			}
+		}
+	});
+
+	observer.observe(document.body, {
+		childList: true,
+		subtree: true,
+		characterData: true,
+	});
+
+	setTimeout(() => {
+		observer.disconnect();
+	}, 30000);
+}
+
+function setupHistoryChangeDetection() {
+	const pushState = history.pushState;
+	history.pushState = function () {
+		pushState.apply(history, arguments);
+		handlePageChange();
+	};
+
+	const replaceState = history.replaceState;
+	history.replaceState = function () {
+		replaceState.apply(history, arguments);
+		handlePageChange();
+	};
+
+	window.addEventListener("popstate", handlePageChange);
+}
+
+function setupContentChangeDetection() {
+	let timeout;
+	const observer = new MutationObserver(() => {
+		clearTimeout(timeout);
+		timeout = setTimeout(handlePageChange, 500);
+	});
+
+	observer.observe(document.body, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		characterData: true,
+	});
+}
+
+setupHistoryChangeDetection();
+setupContentChangeDetection();
+handlePageChange();
