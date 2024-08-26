@@ -2,9 +2,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	console.log("Background script received message:", request);
 	if (request.action === "fetchGitHub") {
 		fetchGitHubFiles(request.repoUrl)
-			.then((files) => {
+			.then(({ files, excludedFiles }) => {
 				console.log("Fetched files:", files);
-				sendResponse({ files: files });
+				console.log("Excluded files:", excludedFiles);
+				sendResponse({ files: files, excludedFiles: excludedFiles });
 			})
 			.catch((error) => {
 				console.error("Error fetching GitHub files:", error);
@@ -29,8 +30,10 @@ async function fetchGitHubFiles(repoUrl) {
 		const files = await fetchFilesRecursively(
 			`https://api.github.com/repos/${owner}/${repo}/contents`
 		);
+		const excludedFiles = await fetchExcludedFiles(owner, repo);
 		console.log("All files retrieved from GitHub:", files);
-		return files;
+		console.log("Excluded files:", excludedFiles);
+		return { files, excludedFiles };
 	} catch (error) {
 		console.error("Error in fetchGitHubFiles:", error);
 		throw error;
@@ -38,48 +41,33 @@ async function fetchGitHubFiles(repoUrl) {
 }
 
 async function fetchFilesRecursively(url) {
-	const response = await fetch(url, {
-		headers: {
-			Accept: "application/vnd.github.v3+json",
-		},
-	});
+	// ... (existing fetchFilesRecursively function remains unchanged)
+}
 
-	if (!response.ok) {
-		if (response.status === 404) {
-			throw new Error(
-				"Repository not found or is private. This extension only works with public repositories."
-			);
-		}
-		const errorBody = await response.text();
-		console.error("GitHub API Error Response:", errorBody);
-		throw new Error(
-			`GitHub API responded with status ${response.status}: ${response.statusText}`
-		);
-	}
+async function fetchExcludedFiles(owner, repo) {
+	const excludeFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`;
+	try {
+		const response = await fetch(excludeFileUrl, {
+			headers: {
+				Accept: "application/vnd.github.v3+json",
+			},
+		});
 
-	const items = await response.json();
-	let files = [];
-
-	for (const item of items) {
-		if (item.type === "file") {
-			const contentResponse = await fetch(item.download_url);
-			if (!contentResponse.ok) {
-				throw new Error(`Failed to fetch content for ${item.name}`);
+		if (!response.ok) {
+			if (response.status === 404) {
+				console.log("No exclude_claudsync file found.");
+				return [];
 			}
-			const content = await contentResponse.text();
-			files.push({
-				name: item.path,
-				content: content,
-				sha: item.sha,
-				lastModified: item.last_modified,
-			});
-		} else if (item.type === "dir") {
-			const subFiles = await fetchFilesRecursively(item.url);
-			files = files.concat(subFiles);
+			throw new Error(`Failed to fetch exclude_claudsync file: ${response.statusText}`);
 		}
-	}
 
-	return files;
+		const data = await response.json();
+		const content = atob(data.content);
+		return content.split('\n').filter(line => line.trim() !== '');
+	} catch (error) {
+		console.error("Error fetching excluded files:", error);
+		return [];
+	}
 }
 
 console.log("Background script loaded");

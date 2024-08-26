@@ -156,9 +156,11 @@ async function updateProject() {
 					}
 
 					const githubFiles = response.files;
+					const excludedFiles = response.excludedFiles || [];
 					console.log(`Fetched ${githubFiles.length} files from GitHub`);
+					console.log(`Excluded files: ${excludedFiles.join(', ')}`);
 
-					await syncFiles(claudeFiles, githubFiles);
+					await syncFiles(claudeFiles, githubFiles, excludedFiles);
 					console.log("Project successfully synced with GitHub");
 					alert("Project successfully synced with GitHub!");
 				} catch (error) {
@@ -182,17 +184,22 @@ async function updateProject() {
 	}
 }
 
-async function syncFiles(claudeFiles, githubFiles) {
+async function syncFiles(claudeFiles, githubFiles, excludedFiles) {
 	console.log("Starting file synchronization...");
 
 	// Step 1: Remove all files from Claude
 	const removalPromises = claudeFiles.map((file) => removeFile(file));
 	await Promise.all(removalPromises);
 
-	// Step 2: Upload all files from GitHub
+	// Step 2: Upload all files from GitHub, except excluded ones
 	let uploadedCount = 0;
 	let skippedCount = 0;
+	let excludedCount = 0;
 	for (const file of githubFiles) {
+		if (excludedFiles.includes(file.name)) {
+			excludedCount++;
+			continue;
+		}
 		if (isFileTypeAllowed(file.name)) {
 			await uploadFileDirectly(file.content, file.name);
 			uploadedCount++;
@@ -200,7 +207,7 @@ async function syncFiles(claudeFiles, githubFiles) {
 			skippedCount++;
 		}
 	}
-	console.log(`Uploaded ${uploadedCount} files, skipped ${skippedCount} files`);
+	console.log(`Uploaded ${uploadedCount} files, skipped ${skippedCount} files, excluded ${excludedCount} files`);
 }
 
 async function removeFile(file) {

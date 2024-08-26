@@ -22,6 +22,11 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 2. If the project description contains a valid GitHub URL, a sync button will appear above the project description. (may need to refresh page manually)
 3. Click the sync button to update your Claude.ai project with the latest files from the linked GitHub repository.
 
+note: to exclude files from your repo being upload to your Claud project, create a file in the root of your repo called "exclude_claudsync" and list the files individually, line seperated, i.e.:
+sensitive_data.txt
+configs/production.yml
+.env
+
 ## Development
 
 ### Prerequisites
