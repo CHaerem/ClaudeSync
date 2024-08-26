@@ -209,37 +209,49 @@ async function updateProject() {
 	}
 }
 
-async function syncFiles(claudeFiles, githubFiles, excludedFiles) {
-	console.log("[Content] Starting file synchronization...");
-	console.log("[Content] Claude files:", claudeFiles);
-	console.log("[Content] GitHub files:", githubFiles);
-	console.log("[Content] Excluded files:", excludedFiles);
+function isFileExcluded(fileName, excludedItems) {
+    return excludedItems.some(item => {
+        if (item.endsWith('/')) {
+            // It's a directory, check if the file is in this directory or its subdirectories
+            return fileName.startsWith(item);
+        } else {
+            // It's a file, check for exact match
+            return fileName === item;
+        }
+    });
+}
 
-	// Step 1: Remove all files from Claude
-	console.log("[Content] Removing existing Claude files...");
-	const removalPromises = claudeFiles.map((file) => removeFile(file));
-	await Promise.all(removalPromises);
+async function syncFiles(claudeFiles, githubFiles, excludedItems) {
+    console.log("[Content] Starting file synchronization...");
+    console.log("[Content] Claude files:", claudeFiles);
+    console.log("[Content] GitHub files:", githubFiles);
+    console.log("[Content] Excluded items:", excludedItems);
 
-	// Step 2: Upload all files from GitHub, except excluded ones
-	let uploadedCount = 0;
-	let skippedCount = 0;
-	let excludedCount = 0;
-	for (const file of githubFiles) {
-		if (excludedFiles.includes(file.name)) {
-			console.log(`[Content] Excluding file: ${file.name}`);
-			excludedCount++;
-			continue;
-		}
-		if (isFileTypeAllowed(file.name)) {
-			console.log(`[Content] Uploading file: ${file.name}`);
-			await uploadFileDirectly(file.content, file.name);
-			uploadedCount++;
-		} else {
-			console.log(`[Content] Skipping file (type not allowed): ${file.name}`);
-			skippedCount++;
-		}
-	}
-	console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}`);
+    // Step 1: Remove all files from Claude
+    console.log("[Content] Removing existing Claude files...");
+    const removalPromises = claudeFiles.map((file) => removeFile(file));
+    await Promise.all(removalPromises);
+
+    // Step 2: Upload all files from GitHub, except excluded ones
+    let uploadedCount = 0;
+    let skippedCount = 0;
+    let excludedCount = 0;
+    for (const file of githubFiles) {
+        if (isFileExcluded(file.name, excludedItems)) {
+            console.log(`[Content] Excluding file: ${file.name}`);
+            excludedCount++;
+            continue;
+        }
+        if (isFileTypeAllowed(file.name)) {
+            console.log(`[Content] Uploading file: ${file.name}`);
+            await uploadFileDirectly(file.content, file.name);
+            uploadedCount++;
+        } else {
+            console.log(`[Content] Skipping file (type not allowed): ${file.name}`);
+            skippedCount++;
+        }
+    }
+    console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}`);
 }
 
 async function removeFile(file) {

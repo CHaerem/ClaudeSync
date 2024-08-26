@@ -97,33 +97,35 @@ async function fetchFilesRecursively(url) {
 }
 
 async function fetchExcludedFiles(owner, repo) {
-	const excludeFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`;
-	console.log("[Background] Fetching exclude file from:", excludeFileUrl);
-	try {
-		const response = await fetch(excludeFileUrl, {
-			headers: {
-				Accept: "application/vnd.github.v3+json",
-			},
-		});
+    const excludeFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`;
+    console.log("[Background] Fetching exclude file from:", excludeFileUrl);
+    try {
+        const response = await fetch(excludeFileUrl, {
+            headers: {
+                Accept: "application/vnd.github.v3+json",
+            },
+        });
 
-		if (!response.ok) {
-			if (response.status === 404) {
-				console.log("[Background] No exclude_claudsync file found.");
-				return [];
-			}
-			console.error("[Background] Failed to fetch exclude_claudsync file:", response.statusText);
-			throw new Error(`Failed to fetch exclude_claudsync file: ${response.statusText}`);
-		}
+        if (!response.ok) {
+            if (response.status === 404) {
+                console.log("[Background] No exclude_claudsync file found.");
+                return [];
+            }
+            console.error("[Background] Failed to fetch exclude_claudsync file:", response.statusText);
+            throw new Error(`Failed to fetch exclude_claudsync file: ${response.statusText}`);
+        }
 
-		const data = await response.json();
-		const content = atob(data.content);
-		const excludedFiles = content.split('\n').filter(line => line.trim() !== '');
-		console.log("[Background] Excluded files:", excludedFiles);
-		return excludedFiles;
-	} catch (error) {
-		console.error("[Background] Error fetching excluded files:", error);
-		return [];
-	}
+        const data = await response.json();
+        const content = atob(data.content);
+        const excludedItems = content.split('\n')
+            .map(line => line.trim())
+            .filter(line => line !== '' && !line.startsWith('#'));
+        console.log("[Background] Excluded items:", excludedItems);
+        return excludedItems;
+    } catch (error) {
+        console.error("[Background] Error fetching excluded files:", error);
+        return [];
+    }
 }
 
 console.log("[Background] Background script loaded");

@@ -24,8 +24,9 @@ Claude Project Updater is a Chrome extension that allows you to synchronize your
 
 note: to exclude files from your repo being upload to your Claud project, create a file in the root of your repo called "exclude_claudsync" and list the files individually, line seperated, i.e.:
 sensitive_data.txt
-configs/production.yml
+production.yml
 .env
+folderName/ (identifies and excludes folder based on forward slash at end)
 
 ## Development
 
