@@ -111,102 +111,96 @@ async function uploadFileDirectly(fileContent, fileName) {
 }
 
 function getClaudeFiles() {
-	console.log("[Content] Getting Claude files");
-	const fileXPath =
-		"/html/body/div[2]/div/div/main/div[2]/div/div/div[2]/ul/li";
-	const fileElements = document.evaluate(
-		fileXPath,
-		document,
-		null,
-		XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-		null
-	);
+    console.log("[Content] Getting Claude files");
+    const fileElements = document.querySelectorAll('ul.flex.flex-col.py-1 > li');
+    console.log("[Content] Found " + fileElements.length + " file elements");
+    
+    const files = [];
+    fileElements.forEach((el, index) => {
+        const nameElement = el.querySelector('div[class^="mb-0.5 mt-1"]');
+        const removeButton = el.querySelector('button[aria-label="Remove from project knowledge"]');
+        
+        console.log(`[Content] File ${index + 1}:`, 
+                    nameElement ? nameElement.textContent.trim() : "Name not found", 
+                    removeButton ? "Remove button found" : "Remove button not found");
+        
+        if (nameElement && removeButton) {
+            files.push({
+                name: nameElement.textContent.trim(),
+                removeButton: removeButton,
+            });
+        }
+    });
 
-	const files = [];
-	for (let i = 0; i < fileElements.snapshotLength; i++) {
-		const el = fileElements.snapshotItem(i);
-		const nameElement = el.querySelector(".min-w-0.flex-1 .line-clamp-2");
-		const removeButton = el.querySelector(
-			'button[aria-label="Remove from project knowledge"]'
-		);
-
-		if (nameElement && removeButton) {
-			files.push({
-				name: nameElement.textContent.trim(),
-				removeButton: removeButton,
-			});
-		}
-	}
-
-	console.log("[Content] Claude files found:", files);
-	return files;
+    console.log("[Content] Claude files found:", files);
+    return files;
 }
 
 async function updateProject() {
-	console.log("[Content] Starting project update...");
-	const button = document.getElementById("github-sync-button");
-	if (button) {
-		button.disabled = true;
-		button.querySelector(".sync-icon").classList.add("spinning");
-	}
+    console.log(`[Content] [${new Date().toISOString()}] Starting project update...`);
+    const button = document.getElementById("github-sync-button");
+    if (button) {
+        button.disabled = true;
+        button.querySelector(".sync-icon").classList.add("spinning");
+    }
 
-	try {
-		const githubUrl = extractGithubUrl();
-		if (!githubUrl) {
-			console.error("[Content] No GitHub URL found in project description");
-			throw new Error("No GitHub URL found in project description");
-		}
-		console.log("[Content] Extracted GitHub URL:", githubUrl);
+    try {
+        const githubUrl = extractGithubUrl();
+        if (!githubUrl) {
+            console.error(`[Content] [${new Date().toISOString()}] No GitHub URL found in project description`);
+            throw new Error("No GitHub URL found in project description");
+        }
+        console.log(`[Content] [${new Date().toISOString()}] Extracted GitHub URL:`, githubUrl);
 
-		const claudeFiles = getClaudeFiles();
-		console.log("[Content] Current Claude files:", claudeFiles);
+        const claudeFiles = getClaudeFiles();
+        console.log(`[Content] [${new Date().toISOString()}] Claude files:`, JSON.stringify(claudeFiles));
 
-		console.log("[Content] Sending message to background script...");
-		chrome.runtime.sendMessage(
-			{ action: "fetchGitHub", repoUrl: githubUrl },
-			async function (response) {
-				try {
-					console.log("[Content] Received response from background script:", response);
-					if (chrome.runtime.lastError) {
-						console.error("[Content] Runtime error:", chrome.runtime.lastError);
-						throw new Error(chrome.runtime.lastError.message);
-					}
-					if (response && response.error) {
-						console.error("[Content] Error in response:", response.error);
-						throw new Error(response.error);
-					}
-					if (!response || !response.files) {
-						console.error("[Content] Invalid response structure:", response);
-						throw new Error("Invalid response from background script");
-					}
+        console.log(`[Content] [${new Date().toISOString()}] Sending message to background script...`);
+        chrome.runtime.sendMessage(
+            { action: "fetchGitHub", repoUrl: githubUrl },
+            async function (response) {
+                try {
+                    console.log(`[Content] [${new Date().toISOString()}] Received response from background script:`, response);
+                    if (chrome.runtime.lastError) {
+                        console.error(`[Content] [${new Date().toISOString()}] Runtime error:`, chrome.runtime.lastError);
+                        throw new Error(chrome.runtime.lastError.message);
+                    }
+                    if (response && response.error) {
+                        console.error(`[Content] [${new Date().toISOString()}] Error in response:`, response.error);
+                        throw new Error(response.error);
+                    }
+                    if (!response || !response.files) {
+                        console.error(`[Content] [${new Date().toISOString()}] Invalid response structure:`, response);
+                        throw new Error("Invalid response from background script");
+                    }
 
-					const githubFiles = response.files;
-					const excludedFiles = response.excludedFiles || [];
-					console.log(`[Content] Fetched ${githubFiles.length} files from GitHub`);
-					console.log(`[Content] Excluded files: ${excludedFiles.join(', ')}`);
+                    const githubFiles = response.files;
+                    const excludedFiles = response.excludedFiles || [];
+                    console.log(`[Content] [${new Date().toISOString()}] Fetched ${githubFiles.length} files from GitHub`);
+                    console.log(`[Content] [${new Date().toISOString()}] Excluded files: ${excludedFiles.join(', ')}`);
 
-					await syncFiles(claudeFiles, githubFiles, excludedFiles);
-					console.log("[Content] Project successfully synced with GitHub");
-					alert("Project successfully synced with GitHub!");
-				} catch (error) {
-					console.error("[Content] Error processing GitHub files:", error);
-					alert("Error processing GitHub files: " + error.message);
-				} finally {
-					if (button) {
-						button.disabled = false;
-						button.querySelector(".sync-icon").classList.remove("spinning");
-					}
-				}
-			}
-		);
-	} catch (error) {
-		console.error("[Content] Error updating project:", error);
-		alert("Error updating project: " + error.message);
-		if (button) {
-			button.disabled = false;
-			button.querySelector(".sync-icon").classList.remove("spinning");
-		}
-	}
+                    await syncFiles(claudeFiles, githubFiles, excludedFiles);
+                    console.log(`[Content] [${new Date().toISOString()}] Project successfully synced with GitHub`);
+                    alert("Project successfully synced with GitHub!");
+                } catch (error) {
+                    console.error(`[Content] [${new Date().toISOString()}] Error processing GitHub files:`, error);
+                    alert("Error processing GitHub files: " + error.message);
+                } finally {
+                    if (button) {
+                        button.disabled = false;
+                        button.querySelector(".sync-icon").classList.remove("spinning");
+                    }
+                }
+            }
+        );
+    } catch (error) {
+        console.error(`[Content] [${new Date().toISOString()}] Error updating project:`, error);
+        alert("Error updating project: " + error.message);
+        if (button) {
+            button.disabled = false;
+            button.querySelector(".sync-icon").classList.remove("spinning");
+        }
+    }
 }
 
 function isFileExcluded(fileName, excludedItems) {
@@ -255,15 +249,15 @@ async function syncFiles(claudeFiles, githubFiles, excludedItems) {
 }
 
 async function removeFile(file) {
-	console.log("[Content] Removing file:", file.name);
-	return new Promise((resolve) => {
-		if (file.removeButton) {
-			file.removeButton.click();
-			setTimeout(resolve, 1000);
-		} else {
-			resolve();
-		}
-	});
+    console.log("[Content] Removing file:", file.name);
+    return new Promise((resolve) => {
+        if (file.removeButton) {
+            file.removeButton.click();
+            setTimeout(resolve, 1000); // Wait for 1 second after clicking to ensure the file is removed
+        } else {
+            resolve();
+        }
+    });
 }
 
 function handlePageChange() {
