@@ -20,25 +20,38 @@ function extractGithubUrl() {
 }
 
 function createSyncButton() {
-	console.log("[Content] Creating sync button");
-	const button = document.createElement("button");
-	button.innerHTML = `
-        <img src="${chrome.runtime.getURL(
-					"icon.svg"
-				)}" alt="Sync" class="sync-icon" width="16" height="16">
-        <span>Sync</span>
-    `;
-	button.id = "github-sync-button";
-	button.className = `
+    console.log("[Content] Creating sync button");
+    const button = document.createElement("button");
+    
+    try {
+        const iconUrl = chrome.runtime.getURL("icon.svg");
+        button.innerHTML = `
+            <img src="${iconUrl}" alt="Sync" class="sync-icon" width="16" height="16">
+            <span>Sync</span>
+        `;
+    } catch (error) {
+        console.error("[Content] Error setting button innerHTML:", error);
+        button.textContent = "Sync"; // Fallback to text-only button
+    }
+    
+    button.id = "github-sync-button";
+    button.className = `
         inline-flex items-center justify-center
         text-text-300 hover:text-text-100
         px-2 py-1 rounded-lg hover:bg-bg-400/50 transition-colors duration-200
         focus:outline-none focus:ring-2 focus:ring-accent-main-100 focus:ring-offset-2
         text-sm font-medium gap-1
     `;
-	button.title = "Sync with GitHub";
-	button.addEventListener("click", updateProject);
-	return button;
+    button.title = "Sync with GitHub";
+    
+    try {
+        button.addEventListener("click", updateProject);
+    } catch (error) {
+        console.error("[Content] Error adding click event listener:", error);
+    }
+    
+    console.log("[Content] Sync button created successfully");
+    return button;
 }
 
 function addSyncButton() {
