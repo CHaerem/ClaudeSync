@@ -149,6 +149,82 @@ function getClaudeFiles() {
     return files;
 }
 
+// [Previous content.js code remains the same until the isFileExcluded function]
+
+function isFileExcluded(fileName, excludedItems, includedItems) {
+    // If include list exists and is not empty, ONLY include files matching the patterns
+    if (includedItems && includedItems.length > 0) {
+        // Check if file matches any include pattern
+        const isIncluded = includedItems.some(item => {
+            if (item.endsWith('/')) {
+                // It's a directory, include this file if it's in this directory or its subdirectories
+                return fileName.startsWith(item);
+            } else {
+                // It's a file, check for exact match
+                return fileName === item;
+            }
+        });
+        // If file doesn't match any include pattern, treat it as excluded
+        if (!isIncluded) {
+            console.log(`[Content] File not in include list: ${fileName}`);
+            return true;
+        }
+    }
+
+    // Only check exclude patterns if file passed the include filter
+    return excludedItems.some(item => {
+        if (item.endsWith('/')) {
+            return fileName.startsWith(item);
+        } else {
+            return fileName === item;
+        }
+    });
+}
+
+async function syncFiles(claudeFiles, githubFiles, excludedItems, includedItems) {
+    console.log("[Content] Starting file synchronization...");
+    console.log("[Content] Claude files:", claudeFiles);
+    console.log("[Content] GitHub files:", githubFiles);
+    console.log("[Content] Excluded items:", excludedItems);
+    console.log("[Content] Included items:", includedItems);
+
+    // Step 1: Remove all files from Claude
+    console.log("[Content] Removing existing Claude files...");
+    const removalPromises = claudeFiles.map((file) => removeFile(file));
+    await Promise.all(removalPromises);
+
+    // Step 2: Upload all files from GitHub, respecting include/exclude rules
+    let uploadedCount = 0;
+    let skippedCount = 0;
+    let excludedCount = 0;
+    let filteredCount = 0;
+
+    for (const file of githubFiles) {
+        if (isFileExcluded(file.name, excludedItems, includedItems)) {
+            if (includedItems && includedItems.length > 0) {
+                console.log(`[Content] File not in include list: ${file.name}`);
+                filteredCount++;
+            } else {
+                console.log(`[Content] Excluding file: ${file.name}`);
+                excludedCount++;
+            }
+            continue;
+        }
+        
+        if (isFileTypeAllowed(file.name)) {
+            console.log(`[Content] Uploading file: ${file.name}`);
+            await uploadFileDirectly(file.content, file.name);
+            uploadedCount++;
+        } else {
+            console.log(`[Content] Skipping file (type not allowed): ${file.name}`);
+            skippedCount++;
+        }
+    }
+    
+    console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}, Filtered: ${filteredCount}`);
+}
+
+// [Update the updateProject function to handle includedFiles]
 async function updateProject() {
     console.log(`[Content] [${new Date().toISOString()}] Starting project update...`);
     const button = document.getElementById("github-sync-button");
@@ -189,10 +265,12 @@ async function updateProject() {
 
                     const githubFiles = response.files;
                     const excludedFiles = response.excludedFiles || [];
+                    const includedFiles = response.includedFiles || [];
                     console.log(`[Content] [${new Date().toISOString()}] Fetched ${githubFiles.length} files from GitHub`);
                     console.log(`[Content] [${new Date().toISOString()}] Excluded files: ${excludedFiles.join(', ')}`);
+                    console.log(`[Content] [${new Date().toISOString()}] Included files: ${includedFiles.join(', ')}`);
 
-                    await syncFiles(claudeFiles, githubFiles, excludedFiles);
+                    await syncFiles(claudeFiles, githubFiles, excludedFiles, includedFiles);
                     console.log(`[Content] [${new Date().toISOString()}] Project successfully synced with GitHub`);
                     alert("Project successfully synced with GitHub!");
                 } catch (error) {
@@ -214,51 +292,6 @@ async function updateProject() {
             button.querySelector(".sync-icon").classList.remove("spinning");
         }
     }
-}
-
-function isFileExcluded(fileName, excludedItems) {
-    return excludedItems.some(item => {
-        if (item.endsWith('/')) {
-            // It's a directory, check if the file is in this directory or its subdirectories
-            return fileName.startsWith(item);
-        } else {
-            // It's a file, check for exact match
-            return fileName === item;
-        }
-    });
-}
-
-async function syncFiles(claudeFiles, githubFiles, excludedItems) {
-    console.log("[Content] Starting file synchronization...");
-    console.log("[Content] Claude files:", claudeFiles);
-    console.log("[Content] GitHub files:", githubFiles);
-    console.log("[Content] Excluded items:", excludedItems);
-
-    // Step 1: Remove all files from Claude
-    console.log("[Content] Removing existing Claude files...");
-    const removalPromises = claudeFiles.map((file) => removeFile(file));
-    await Promise.all(removalPromises);
-
-    // Step 2: Upload all files from GitHub, except excluded ones
-    let uploadedCount = 0;
-    let skippedCount = 0;
-    let excludedCount = 0;
-    for (const file of githubFiles) {
-        if (isFileExcluded(file.name, excludedItems)) {
-            console.log(`[Content] Excluding file: ${file.name}`);
-            excludedCount++;
-            continue;
-        }
-        if (isFileTypeAllowed(file.name)) {
-            console.log(`[Content] Uploading file: ${file.name}`);
-            await uploadFileDirectly(file.content, file.name);
-            uploadedCount++;
-        } else {
-            console.log(`[Content] Skipping file (type not allowed): ${file.name}`);
-            skippedCount++;
-        }
-    }
-    console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}`);
 }
 
 async function removeFile(file) {
