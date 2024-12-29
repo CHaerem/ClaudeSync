@@ -447,6 +447,93 @@ function applyFilters(filesList, excludedFiles, includedFiles) {
     return filesList;
 }
 
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'promptForPAT') {
+        // Create modal container with same styling as sync confirmation
+        const modal = document.createElement('div');
+        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+        
+        // Create modal content
+        const content = document.createElement('div');
+        content.className = 'bg-[#171717] rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
+        
+        // Create header
+        const header = document.createElement('h3');
+        header.className = 'text-lg font-semibold text-white';
+        header.textContent = 'GitHub Authentication Required';
+        
+        // Create message
+        const message = document.createElement('p');
+        message.className = 'text-sm text-gray-300 mt-2';
+        message.textContent = request.message;
+        
+        // Create input
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.className = 'mt-4 w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        input.placeholder = 'Enter your GitHub PAT';
+        
+        // Create help text
+        const helpText = document.createElement('p');
+        helpText.className = 'text-xs text-gray-400 mt-2';
+        helpText.innerHTML = 'You can create a PAT in your <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-400 hover:text-blue-300">GitHub settings</a>. Only "public_repo" scope is needed.';
+        
+        // Create buttons container
+        const buttons = document.createElement('div');
+        buttons.className = 'flex justify-end space-x-3 mt-6';
+        
+        // Create cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 rounded-md hover:bg-gray-700 transition-colors border border-gray-700';
+        cancelBtn.textContent = 'Cancel';
+        
+        // Create submit button
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors';
+        submitBtn.textContent = 'Submit';
+        
+        // Assemble modal
+        buttons.append(cancelBtn, submitBtn);
+        content.append(header, message, input, helpText, buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Handle submit
+        submitBtn.onclick = () => {
+            const pat = input.value.trim();
+            if (pat) {
+                document.body.removeChild(modal);
+                sendResponse(pat);
+            }
+        };
+        
+        // Handle cancel
+        cancelBtn.onclick = () => {
+            document.body.removeChild(modal);
+            sendResponse(null);
+        };
+        
+        // Handle click outside
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                sendResponse(null);
+            }
+        };
+        
+        // Handle escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                document.body.removeChild(modal);
+                sendResponse(null);
+                window.removeEventListener('keydown', handleEscape);
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        
+        return true; // Keep message channel open
+    }
+});
 
 const modalStyles = document.createElement("style");
 modalStyles.textContent = `

@@ -5,7 +5,8 @@
   "description": "Update Claude.ai project from public GitHub repositories",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "https://claude.ai/*",

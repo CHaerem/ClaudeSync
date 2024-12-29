@@ -1,13 +1,72 @@
 console.log("[Background] Background script loading...");
 
+async function makeGitHubRequest(url, options = {}) {
+    console.log("[Background] Making GitHub request to:", url);
+    
+    // Try to get stored PAT first
+    const { githubPat } = await chrome.storage.local.get('githubPat');
+    
+    if (githubPat) {
+        options.headers = {
+            ...options.headers,
+            'Authorization': `token ${githubPat}`
+        };
+    }
+
+    const response = await fetch(url, options);
+    console.log("[Background] GitHub API response status:", response.status);
+    
+    if (response.status === 403) {
+        console.log("[Background] 403 received, attempting to prompt for PAT");
+        // Rate limit exceeded, prompt for PAT
+        try {
+            const tabs = await chrome.tabs.query({active: true, currentWindow: true});
+            if (!tabs[0]) {
+                throw new Error('No active tab found');
+            }
+
+            const newPat = await chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'promptForPAT',
+                message: 'GitHub rate limit exceeded. Please enter a Personal Access Token to continue:'
+            });
+            
+            if (newPat) {
+                console.log("[Background] Received new PAT, retrying request");
+                // Store the PAT
+                await chrome.storage.local.set({ githubPat: newPat });
+                
+                // Retry request with PAT
+                options.headers = {
+                    ...options.headers,
+                    'Authorization': `token ${newPat}`
+                };
+                return fetch(url, options);
+            } else {
+                throw new Error('GitHub rate limit exceeded. Please try again later or provide a Personal Access Token.');
+            }
+        } catch (error) {
+            console.error("[Background] Error during PAT prompt:", error);
+            throw new Error('GitHub rate limit exceeded. Please try again later or provide a Personal Access Token.');
+        }
+    }
+    
+    if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("[Background] GitHub API Error Response:", errorBody);
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    }
+    
+    return response;
+}
+
 async function fetchFilterRules(owner, repo) {
     console.log("[Background] Fetching filter rules for:", owner, repo);
     try {
         const [excludeResponse, includeResponse] = await Promise.all([
-            fetch(`https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`, {
+            makeGitHubRequest(`https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`, {
                 headers: { Accept: "application/vnd.github.v3+json" }
             }),
-            fetch(`https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`, {
+            makeGitHubRequest(`https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`, {
                 headers: { Accept: "application/vnd.github.v3+json" }
             })
         ]);
@@ -40,7 +99,7 @@ async function fetchFilterRules(owner, repo) {
 async function getDefaultBranch(owner, repo) {
     console.log("[Background] Fetching default branch for:", owner, repo);
     try {
-        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        const response = await makeGitHubRequest(`https://api.github.com/repos/${owner}/${repo}`, {
             headers: { Accept: "application/vnd.github.v3+json" }
         });
         
@@ -66,7 +125,7 @@ async function fetchFilesList(owner, repo) {
         const defaultBranch = await getDefaultBranch(owner, repo);
         
         // Try fetching the tree using the default branch
-        const response = await fetch(
+        const response = await makeGitHubRequest(
             `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
             { headers: { Accept: "application/vnd.github.v3+json" } }
         );
@@ -96,6 +155,29 @@ async function fetchFilesList(owner, repo) {
     }
 }
 
+async function fetchSelectedFiles(owner, repo, filesList) {
+    console.log("[Background] Fetching selected files:", filesList);
+    return Promise.all(
+        filesList.map(async (path) => {
+            const response = await makeGitHubRequest(
+                `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
+                { headers: { Accept: "application/vnd.github.v3+json" } }
+            );
+            
+            if (!response.ok) {
+                console.error(`[Background] Error fetching ${path}:`, response.statusText);
+                return null;
+            }
+
+            const data = await response.json();
+            return {
+                name: path,
+                content: atob(data.content),
+                sha: data.sha
+            };
+        })
+    ).then(files => files.filter(f => f !== null));
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("[Background] Received message:", request);
@@ -153,30 +235,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-async function fetchSelectedFiles(owner, repo, filesList) {
-    console.log("[Background] Fetching selected files:", filesList);
-    return Promise.all(
-        filesList.map(async (path) => {
-            const response = await fetch(
-                `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
-                { headers: { Accept: "application/vnd.github.v3+json" } }
-            );
-            
-            if (!response.ok) {
-                console.error(`[Background] Error fetching ${path}:`, response.statusText);
-                return null;
-            }
-
-            const data = await response.json();
-            return {
-                name: path,
-                content: atob(data.content),
-                sha: data.sha
-            };
-        })
-    ).then(files => files.filter(f => f !== null));
-}
-
 async function fetchGitHubFiles(repoUrl) {
     console.log("[Background] Starting fetchGitHubFiles for:", repoUrl);
 
@@ -210,7 +268,7 @@ async function fetchGitHubFiles(repoUrl) {
 
 async function fetchFilesRecursively(url) {
     console.log("[Background] Fetching files from:", url);
-    const response = await fetch(url, {
+    const response = await makeGitHubRequest(url, {
         headers: {
             Accept: "application/vnd.github.v3+json",
         },
@@ -236,7 +294,7 @@ async function fetchFilesRecursively(url) {
     for (const item of items) {
         if (item.type === "file") {
             console.log("[Background] Fetching content for file:", item.name);
-            const contentResponse = await fetch(item.download_url);
+            const contentResponse = await makeGitHubRequest(item.download_url);
             if (!contentResponse.ok) {
                 console.error("[Background] Failed to fetch content for", item.name);
                 throw new Error(`Failed to fetch content for ${item.name}`);
@@ -262,7 +320,7 @@ async function fetchExcludedFiles(owner, repo) {
     const excludeFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`;
     console.log("[Background] Fetching exclude file from:", excludeFileUrl);
     try {
-        const response = await fetch(excludeFileUrl, {
+        const response = await makeGitHubRequest(excludeFileUrl, {
             headers: {
                 Accept: "application/vnd.github.v3+json",
             },
@@ -294,7 +352,7 @@ async function fetchIncludedFiles(owner, repo) {
     const includeFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`;
     console.log("[Background] Fetching include file from:", includeFileUrl);
     try {
-        const response = await fetch(includeFileUrl, {
+        const response = await makeGitHubRequest(includeFileUrl, {
             headers: {
                 Accept: "application/vnd.github.v3+json",
             },
