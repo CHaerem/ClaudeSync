@@ -19,6 +19,92 @@ function extractGithubUrl() {
 	return null;
 }
 
+function showSyncConfirmation(githubFiles, excludedFiles, includedFiles) {
+    return new Promise((resolve) => {
+        // Create modal container
+        const modal = document.createElement('div');
+        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        
+        // Create modal content with dark theme
+        const content = document.createElement('div');
+        content.className = 'bg-gray-900 rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
+        
+        // Create header
+        const header = document.createElement('h3');
+        header.className = 'text-lg font-semibold text-white';
+        
+        // Create message based on configuration
+        let message = '';
+        if (includedFiles.length > 0) {
+            header.textContent = 'Included Files Found';
+            message = `The following files/folders will be synced based on include_claudsync:\n\n${includedFiles.join('\n')}`;
+            if (excludedFiles.length > 0) {
+                message += `\n\nThe following exclusions will also be applied:\n${excludedFiles.join('\n')}`;
+            }
+        } else if (excludedFiles.length > 0) {
+            header.textContent = 'Excluded Files Found';
+            message = `All files will be synced EXCEPT:\n\n${excludedFiles.join('\n')}`;
+        } else {
+            header.textContent = 'No Filters Found';
+            message = 'No include_claudsync or exclude_claudsync files found. All files will be synced.';
+        }
+        
+        // Add file count
+        message += `\n\nTotal files to be synced: ${githubFiles.length}`;
+        
+        // Create message element
+        const messageEl = document.createElement('pre');
+        messageEl.className = 'whitespace-pre-wrap text-sm mt-2 mb-4 max-h-60 overflow-y-auto bg-gray-800 text-gray-100 p-4 rounded-md border border-gray-700';
+        messageEl.textContent = message;
+        
+        // Create buttons container
+        const buttons = document.createElement('div');
+        buttons.className = 'flex justify-end space-x-3 mt-4';
+        
+        // Create cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 rounded-md hover:bg-gray-700 transition-colors border border-gray-700';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = () => {
+            modal.remove();
+            resolve(false);
+        };
+        
+        // Create confirm button
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors';
+        confirmBtn.textContent = 'Continue';
+        confirmBtn.onclick = () => {
+            modal.remove();
+            resolve(true);
+        };
+        
+        // Assemble modal
+        buttons.append(cancelBtn, confirmBtn);
+        content.append(header, messageEl, buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Add escape key handler
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                modal.remove();
+                resolve(false);
+                window.removeEventListener('keydown', handleEscape);
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        
+        // Add click outside handler
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(false);
+            }
+        });
+    });
+}
+
 function createSyncButton() {
     console.log("[Content] Creating sync button");
     const button = document.createElement("button");
@@ -224,7 +310,6 @@ async function syncFiles(claudeFiles, githubFiles, excludedItems, includedItems)
     console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}, Filtered: ${filteredCount}`);
 }
 
-// [Update the updateProject function to handle includedFiles]
 async function updateProject() {
     console.log(`[Content] [${new Date().toISOString()}] Starting project update...`);
     const button = document.getElementById("github-sync-button");
@@ -266,10 +351,16 @@ async function updateProject() {
                     const githubFiles = response.files;
                     const excludedFiles = response.excludedFiles || [];
                     const includedFiles = response.includedFiles || [];
-                    console.log(`[Content] [${new Date().toISOString()}] Fetched ${githubFiles.length} files from GitHub`);
-                    console.log(`[Content] [${new Date().toISOString()}] Excluded files: ${excludedFiles.join(', ')}`);
-                    console.log(`[Content] [${new Date().toISOString()}] Included files: ${includedFiles.join(', ')}`);
+                    
+                    // Show confirmation dialog before proceeding
+                    const shouldProceed = await showSyncConfirmation(githubFiles, excludedFiles, includedFiles);
+                    
+                    if (!shouldProceed) {
+                        console.log(`[Content] [${new Date().toISOString()}] Sync cancelled by user`);
+                        return;
+                    }
 
+                    console.log(`[Content] [${new Date().toISOString()}] Proceeding with sync...`);
                     await syncFiles(claudeFiles, githubFiles, excludedFiles, includedFiles);
                     console.log(`[Content] [${new Date().toISOString()}] Project successfully synced with GitHub`);
                     alert("Project successfully synced with GitHub!");
@@ -293,6 +384,43 @@ async function updateProject() {
         }
     }
 }
+
+const modalStyles = document.createElement("style");
+modalStyles.textContent = `
+    .sync-confirmation-modal pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        line-height: 1.5;
+    }
+    
+    .sync-confirmation-modal button {
+        transition: all 150ms ease-in-out;
+    }
+    
+    .sync-confirmation-modal button:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+    }
+    
+    /* Add scrollbar styling for the pre element */
+    .sync-confirmation-modal pre::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-track {
+        background: #1f2937;
+        border-radius: 4px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 4px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+    }
+`;
+document.head.appendChild(modalStyles);
 
 async function removeFile(file) {
     console.log("[Content] Removing file:", file.name);
