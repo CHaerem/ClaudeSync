@@ -23,11 +23,11 @@ function showSyncConfirmation(githubFiles, excludedFiles, includedFiles) {
     return new Promise((resolve) => {
         // Create modal container
         const modal = document.createElement('div');
-        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black flex items-center justify-center z-50';
         
         // Create modal content with dark theme
         const content = document.createElement('div');
-        content.className = 'bg-gray-900 rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
+        content.className = 'bg-[#171717] rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
         
         // Create header
         const header = document.createElement('h3');
@@ -54,7 +54,7 @@ function showSyncConfirmation(githubFiles, excludedFiles, includedFiles) {
         
         // Create message element
         const messageEl = document.createElement('pre');
-        messageEl.className = 'whitespace-pre-wrap text-sm mt-2 mb-4 max-h-60 overflow-y-auto bg-gray-800 text-gray-100 p-4 rounded-md border border-gray-700';
+        messageEl.className = 'whitespace-pre-wrap text-sm mt-2 mb-4 max-h-60 overflow-y-auto bg-[#0D0D0D] text-gray-100 p-4 rounded-md border border-gray-700';
         messageEl.textContent = message;
         
         // Create buttons container
