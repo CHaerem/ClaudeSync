@@ -311,7 +311,7 @@ async function syncFiles(claudeFiles, githubFiles, excludedItems, includedItems)
 }
 
 async function updateProject() {
-    console.log(`[Content] [${new Date().toISOString()}] Starting project update...`);
+    console.log("[Content] Starting project update...");
     const button = document.getElementById("github-sync-button");
     if (button) {
         button.disabled = true;
@@ -321,69 +321,132 @@ async function updateProject() {
     try {
         const githubUrl = extractGithubUrl();
         if (!githubUrl) {
-            console.error(`[Content] [${new Date().toISOString()}] No GitHub URL found in project description`);
             throw new Error("No GitHub URL found in project description");
         }
-        console.log(`[Content] [${new Date().toISOString()}] Extracted GitHub URL:`, githubUrl);
 
-        const claudeFiles = getClaudeFiles();
-        console.log(`[Content] [${new Date().toISOString()}] Claude files:`, JSON.stringify(claudeFiles));
-
-        console.log(`[Content] [${new Date().toISOString()}] Sending message to background script...`);
-        chrome.runtime.sendMessage(
-            { action: "fetchGitHub", repoUrl: githubUrl },
-            async function (response) {
-                try {
-                    console.log(`[Content] [${new Date().toISOString()}] Received response from background script:`, response);
+        // Step 1: Initial request to get filter rules and file list
+        const initialResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { 
+                    action: "fetchGitHub", 
+                    repoUrl: githubUrl,
+                    confirmed: false 
+                },
+                response => {
                     if (chrome.runtime.lastError) {
-                        console.error(`[Content] [${new Date().toISOString()}] Runtime error:`, chrome.runtime.lastError);
-                        throw new Error(chrome.runtime.lastError.message);
-                    }
-                    if (response && response.error) {
-                        console.error(`[Content] [${new Date().toISOString()}] Error in response:`, response.error);
-                        throw new Error(response.error);
-                    }
-                    if (!response || !response.files) {
-                        console.error(`[Content] [${new Date().toISOString()}] Invalid response structure:`, response);
-                        throw new Error("Invalid response from background script");
-                    }
-
-                    const githubFiles = response.files;
-                    const excludedFiles = response.excludedFiles || [];
-                    const includedFiles = response.includedFiles || [];
-                    
-                    // Show confirmation dialog before proceeding
-                    const shouldProceed = await showSyncConfirmation(githubFiles, excludedFiles, includedFiles);
-                    
-                    if (!shouldProceed) {
-                        console.log(`[Content] [${new Date().toISOString()}] Sync cancelled by user`);
-                        return;
-                    }
-
-                    console.log(`[Content] [${new Date().toISOString()}] Proceeding with sync...`);
-                    await syncFiles(claudeFiles, githubFiles, excludedFiles, includedFiles);
-                    console.log(`[Content] [${new Date().toISOString()}] Project successfully synced with GitHub`);
-                    alert("Project successfully synced with GitHub!");
-                } catch (error) {
-                    console.error(`[Content] [${new Date().toISOString()}] Error processing GitHub files:`, error);
-                    alert("Error processing GitHub files: " + error.message);
-                } finally {
-                    if (button) {
-                        button.disabled = false;
-                        button.querySelector(".sync-icon").classList.remove("spinning");
+                        reject(chrome.runtime.lastError);
+                    } else if (response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        resolve(response);
                     }
                 }
-            }
+            );
+        });
+
+        // Filter files based on rules
+        const filesToFetch = applyFilters(
+            initialResponse.filesList,
+            initialResponse.excludedFiles,
+            initialResponse.includedFiles
         );
+
+        // Show confirmation dialog
+        const shouldProceed = await showSyncConfirmation(
+            filesToFetch,
+            initialResponse.excludedFiles,
+            initialResponse.includedFiles
+        );
+
+        if (!shouldProceed) {
+            console.log("[Content] Sync cancelled by user");
+            return;
+        }
+
+        // Step 2: Fetch actual files after confirmation
+        const finalResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { 
+                    action: "fetchGitHub", 
+                    repoUrl: githubUrl,
+                    confirmed: true,
+                    filesList: filesToFetch,
+                    excludedFiles: initialResponse.excludedFiles,
+                    includedFiles: initialResponse.includedFiles
+                },
+                response => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else if (response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+
+        // Step 3: Sync files
+        const claudeFiles = getClaudeFiles();
+        await syncFiles(
+            claudeFiles, 
+            finalResponse.files,
+            finalResponse.excludedFiles,
+            finalResponse.includedFiles
+        );
+
+        console.log("[Content] Project successfully synced with GitHub");
+        alert("Project successfully synced with GitHub!");
     } catch (error) {
-        console.error(`[Content] [${new Date().toISOString()}] Error updating project:`, error);
+        console.error("[Content] Error updating project:", error);
         alert("Error updating project: " + error.message);
+    } finally {
         if (button) {
             button.disabled = false;
             button.querySelector(".sync-icon").classList.remove("spinning");
         }
     }
 }
+
+function applyFilters(filesList, excludedFiles, includedFiles) {
+    console.log("[Content] Applying filters to files list:", {
+        total: filesList.length,
+        excludes: excludedFiles,
+        includes: includedFiles
+    });
+
+    // If include list exists and is not empty, ONLY include files matching the patterns
+    if (includedFiles && includedFiles.length > 0) {
+        filesList = filesList.filter(file => {
+            return includedFiles.some(pattern => {
+                if (pattern.endsWith('/')) {
+                    // It's a directory pattern
+                    return file.startsWith(pattern);
+                }
+                // It's a file pattern
+                return file === pattern;
+            });
+        });
+    }
+
+    // Then apply exclude patterns
+    if (excludedFiles && excludedFiles.length > 0) {
+        filesList = filesList.filter(file => {
+            return !excludedFiles.some(pattern => {
+                if (pattern.endsWith('/')) {
+                    // It's a directory pattern
+                    return file.startsWith(pattern);
+                }
+                // It's a file pattern
+                return file === pattern;
+            });
+        });
+    }
+
+    console.log("[Content] Files after filtering:", filesList.length);
+    return filesList;
+}
+
 
 const modalStyles = document.createElement("style");
 modalStyles.textContent = `
