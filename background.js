@@ -37,31 +37,63 @@ async function fetchFilterRules(owner, repo) {
     }
 }
 
+async function getDefaultBranch(owner, repo) {
+    console.log("[Background] Fetching default branch for:", owner, repo);
+    try {
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+            headers: { Accept: "application/vnd.github.v3+json" }
+        });
+        
+        if (!response.ok) {
+            console.error(`[Background] Failed to fetch repo info: ${response.status}`);
+            throw new Error(`Failed to fetch repository info: ${response.status}`);
+        }
+        
+        const repoInfo = await response.json();
+        console.log(`[Background] Default branch is: ${repoInfo.default_branch}`);
+        return repoInfo.default_branch;
+    } catch (error) {
+        console.error("[Background] Error getting default branch:", error);
+        throw error;
+    }
+}
+
 async function fetchFilesList(owner, repo) {
     console.log("[Background] Fetching files list for:", owner, repo);
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`, {
-        headers: { Accept: "application/vnd.github.v3+json" }
-    });
+    
+    try {
+        // First get the default branch
+        const defaultBranch = await getDefaultBranch(owner, repo);
+        
+        // Try fetching the tree using the default branch
+        const response = await fetch(
+            `https://api.github.com/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
+            { headers: { Accept: "application/vnd.github.v3+json" } }
+        );
 
-    if (!response.ok) {
-        if (response.status === 404) {
-            // Try 'master' branch if 'main' doesn't exist
-            const masterResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`, {
-                headers: { Accept: "application/vnd.github.v3+json" }
-            });
-            if (!masterResponse.ok) {
-                throw new Error(`GitHub API responded with status ${response.status}: ${response.statusText}`);
-            }
-            return (await masterResponse.json()).tree
-                .filter(item => item.type === 'blob')
-                .map(item => item.path);
+        if (!response.ok) {
+            console.error(`[Background] Failed to fetch tree: ${response.status}`);
+            // Include more details in error message
+            const errorBody = await response.text();
+            throw new Error(
+                `Failed to fetch repository tree (${response.status}): ${response.statusText}\n${errorBody}`
+            );
         }
-        throw new Error(`GitHub API responded with status ${response.status}: ${response.statusText}`);
-    }
 
-    return (await response.json()).tree
-        .filter(item => item.type === 'blob')
-        .map(item => item.path);
+        const data = await response.json();
+        
+        // Check if we got truncated results
+        if (data.truncated) {
+            console.warn("[Background] Warning: Repository tree was truncated due to size");
+        }
+
+        return data.tree
+            .filter(item => item.type === 'blob')
+            .map(item => item.path);
+    } catch (error) {
+        console.error("[Background] Error in fetchFilesList:", error);
+        throw error;
+    }
 }
 
 
