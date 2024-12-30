@@ -62,14 +62,15 @@ async function makeGitHubRequest(url, options = {}) {
 async function fetchFilterRules(owner, repo) {
     console.log("[Background] Fetching filter rules for:", owner, repo);
     try {
-        const [excludeResponse, includeResponse] = await Promise.all([
-            makeGitHubRequest(`https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`, {
-                headers: { Accept: "application/vnd.github.v3+json" }
-            }),
-            makeGitHubRequest(`https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`, {
-                headers: { Accept: "application/vnd.github.v3+json" }
-            })
-        ]);
+        const excludeResponse = await makeGitHubRequest(
+            `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`,
+            { headers: { Accept: "application/vnd.github.v3+json" } }
+        ).catch(() => ({ ok: false }));
+
+        const includeResponse = await makeGitHubRequest(
+            `https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`,
+            { headers: { Accept: "application/vnd.github.v3+json" } }
+        ).catch(() => ({ ok: false }));
 
         let excludedFiles = [], includedFiles = [];
 
