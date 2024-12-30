@@ -3,7 +3,6 @@ console.log("[Background] Background script loading...");
 async function makeGitHubRequest(url, options = {}) {
     console.log("[Background] Making GitHub request to:", url);
     
-    // Try to get stored PAT first
     const { githubPat } = await chrome.storage.local.get('githubPat');
     
     if (githubPat) {
@@ -14,86 +13,78 @@ async function makeGitHubRequest(url, options = {}) {
     }
 
     const response = await fetch(url, options);
-    console.log("[Background] GitHub API response status:", response.status);
     
     if (response.status === 403) {
+        // Rate limit handling remains the same
         console.log("[Background] 403 received, attempting to prompt for PAT");
-        // Rate limit exceeded, prompt for PAT
         try {
             const tabs = await chrome.tabs.query({active: true, currentWindow: true});
-            if (!tabs[0]) {
-                throw new Error('No active tab found');
-            }
-
+            if (!tabs[0]) throw new Error('No active tab found');
+            
             const newPat = await chrome.tabs.sendMessage(tabs[0].id, {
                 action: 'promptForPAT',
-                message: 'GitHub rate limit exceeded. Please enter a Personal Access Token to continue:'
+                message: 'GitHub rate limit exceeded. Please enter a Personal Access Token:'
             });
             
             if (newPat) {
-                console.log("[Background] Received new PAT, retrying request");
-                // Store the PAT
                 await chrome.storage.local.set({ githubPat: newPat });
-                
-                // Retry request with PAT
-                options.headers = {
-                    ...options.headers,
-                    'Authorization': `token ${newPat}`
-                };
+                options.headers = { ...options.headers, 'Authorization': `token ${newPat}` };
                 return fetch(url, options);
-            } else {
-                throw new Error('GitHub rate limit exceeded. Please try again later or provide a Personal Access Token.');
             }
+            throw new Error('GitHub rate limit exceeded. Please try again later or provide a PAT.');
         } catch (error) {
             console.error("[Background] Error during PAT prompt:", error);
-            throw new Error('GitHub rate limit exceeded. Please try again later or provide a Personal Access Token.');
+            throw error;
         }
     }
-    
-    if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("[Background] GitHub API Error Response:", errorBody);
-        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-    }
-    
+
+    // Return response for all statuses - let calling function handle specific cases
     return response;
 }
 
 async function fetchFilterRules(owner, repo) {
     console.log("[Background] Fetching filter rules for:", owner, repo);
     try {
+        let excludedFiles = [], includedFiles = [];
+
+        // Fetch exclude rules
         const excludeResponse = await makeGitHubRequest(
             `https://api.github.com/repos/${owner}/${repo}/contents/exclude_claudsync`,
             { headers: { Accept: "application/vnd.github.v3+json" } }
-        ).catch(() => ({ ok: false }));
+        );
 
+        // Fetch include rules
         const includeResponse = await makeGitHubRequest(
             `https://api.github.com/repos/${owner}/${repo}/contents/include_claudsync`,
             { headers: { Accept: "application/vnd.github.v3+json" } }
-        ).catch(() => ({ ok: false }));
+        );
 
-        let excludedFiles = [], includedFiles = [];
-
-        if (excludeResponse.ok) {
+        // Process exclude_claudsync if it exists
+        if (excludeResponse.status === 200) {
             const excludeData = await excludeResponse.json();
             excludedFiles = atob(excludeData.content)
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line && !line.startsWith('#'));
+        } else if (excludeResponse.status !== 404) {
+            throw new Error(`Failed to fetch exclude_claudsync: ${excludeResponse.status}`);
         }
 
-        if (includeResponse.ok) {
+        // Process include_claudsync if it exists
+        if (includeResponse.status === 200) {
             const includeData = await includeResponse.json();
             includedFiles = atob(includeData.content)
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line && !line.startsWith('#'));
+        } else if (includeResponse.status !== 404) {
+            throw new Error(`Failed to fetch include_claudsync: ${includeResponse.status}`);
         }
 
         return { excludedFiles, includedFiles };
     } catch (error) {
-        console.warn("[Background] Error fetching filter rules:", error);
-        return { excludedFiles: [], includedFiles: [] };
+        console.error("[Background] Error fetching filter rules:", error);
+        throw error;
     }
 }
 
