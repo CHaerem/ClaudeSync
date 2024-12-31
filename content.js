@@ -19,6 +19,92 @@ function extractGithubUrl() {
 	return null;
 }
 
+function showSyncConfirmation(githubFiles, excludedFiles, includedFiles) {
+    return new Promise((resolve) => {
+        // Create modal container
+        const modal = document.createElement('div');
+        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black flex items-center justify-center z-50';
+        
+        // Create modal content with dark theme
+        const content = document.createElement('div');
+        content.className = 'bg-[#171717] rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
+        
+        // Create header
+        const header = document.createElement('h3');
+        header.className = 'text-lg font-semibold text-white';
+        
+        // Create message based on configuration
+        let message = '';
+        if (includedFiles.length > 0) {
+            header.textContent = 'Included Files Found';
+            message = `The following files/folders will be synced based on include_claudsync:\n\n${includedFiles.join('\n')}`;
+            if (excludedFiles.length > 0) {
+                message += `\n\nThe following exclusions will also be applied:\n${excludedFiles.join('\n')}`;
+            }
+        } else if (excludedFiles.length > 0) {
+            header.textContent = 'Excluded Files Found';
+            message = `All files will be synced EXCEPT:\n\n${excludedFiles.join('\n')}`;
+        } else {
+            header.textContent = 'No Filters Found';
+            message = 'No include_claudsync or exclude_claudsync files found. All files will be synced.';
+        }
+        
+        // Add file count
+        message += `\n\nTotal files to be synced: ${githubFiles.length}`;
+        
+        // Create message element
+        const messageEl = document.createElement('pre');
+        messageEl.className = 'whitespace-pre-wrap text-sm mt-2 mb-4 max-h-60 overflow-y-auto bg-[#0D0D0D] text-gray-100 p-4 rounded-md border border-gray-700';
+        messageEl.textContent = message;
+        
+        // Create buttons container
+        const buttons = document.createElement('div');
+        buttons.className = 'flex justify-end space-x-3 mt-4';
+        
+        // Create cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 rounded-md hover:bg-gray-700 transition-colors border border-gray-700';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.onclick = () => {
+            modal.remove();
+            resolve(false);
+        };
+        
+        // Create confirm button
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors';
+        confirmBtn.textContent = 'Continue';
+        confirmBtn.onclick = () => {
+            modal.remove();
+            resolve(true);
+        };
+        
+        // Assemble modal
+        buttons.append(cancelBtn, confirmBtn);
+        content.append(header, messageEl, buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Add escape key handler
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                modal.remove();
+                resolve(false);
+                window.removeEventListener('keydown', handleEscape);
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        
+        // Add click outside handler
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(false);
+            }
+        });
+    });
+}
+
 function createSyncButton() {
     console.log("[Content] Creating sync button");
     const button = document.createElement("button");
@@ -224,9 +310,8 @@ async function syncFiles(claudeFiles, githubFiles, excludedItems, includedItems)
     console.log(`[Content] Sync complete. Uploaded: ${uploadedCount}, Skipped: ${skippedCount}, Excluded: ${excludedCount}, Filtered: ${filteredCount}`);
 }
 
-// [Update the updateProject function to handle includedFiles]
 async function updateProject() {
-    console.log(`[Content] [${new Date().toISOString()}] Starting project update...`);
+    console.log("[Content] Starting project update...");
     const button = document.getElementById("github-sync-button");
     if (button) {
         button.disabled = true;
@@ -236,63 +321,256 @@ async function updateProject() {
     try {
         const githubUrl = extractGithubUrl();
         if (!githubUrl) {
-            console.error(`[Content] [${new Date().toISOString()}] No GitHub URL found in project description`);
             throw new Error("No GitHub URL found in project description");
         }
-        console.log(`[Content] [${new Date().toISOString()}] Extracted GitHub URL:`, githubUrl);
 
-        const claudeFiles = getClaudeFiles();
-        console.log(`[Content] [${new Date().toISOString()}] Claude files:`, JSON.stringify(claudeFiles));
-
-        console.log(`[Content] [${new Date().toISOString()}] Sending message to background script...`);
-        chrome.runtime.sendMessage(
-            { action: "fetchGitHub", repoUrl: githubUrl },
-            async function (response) {
-                try {
-                    console.log(`[Content] [${new Date().toISOString()}] Received response from background script:`, response);
+        // Step 1: Initial request to get filter rules and file list
+        const initialResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { 
+                    action: "fetchGitHub", 
+                    repoUrl: githubUrl,
+                    confirmed: false 
+                },
+                response => {
                     if (chrome.runtime.lastError) {
-                        console.error(`[Content] [${new Date().toISOString()}] Runtime error:`, chrome.runtime.lastError);
-                        throw new Error(chrome.runtime.lastError.message);
-                    }
-                    if (response && response.error) {
-                        console.error(`[Content] [${new Date().toISOString()}] Error in response:`, response.error);
-                        throw new Error(response.error);
-                    }
-                    if (!response || !response.files) {
-                        console.error(`[Content] [${new Date().toISOString()}] Invalid response structure:`, response);
-                        throw new Error("Invalid response from background script");
-                    }
-
-                    const githubFiles = response.files;
-                    const excludedFiles = response.excludedFiles || [];
-                    const includedFiles = response.includedFiles || [];
-                    console.log(`[Content] [${new Date().toISOString()}] Fetched ${githubFiles.length} files from GitHub`);
-                    console.log(`[Content] [${new Date().toISOString()}] Excluded files: ${excludedFiles.join(', ')}`);
-                    console.log(`[Content] [${new Date().toISOString()}] Included files: ${includedFiles.join(', ')}`);
-
-                    await syncFiles(claudeFiles, githubFiles, excludedFiles, includedFiles);
-                    console.log(`[Content] [${new Date().toISOString()}] Project successfully synced with GitHub`);
-                    alert("Project successfully synced with GitHub!");
-                } catch (error) {
-                    console.error(`[Content] [${new Date().toISOString()}] Error processing GitHub files:`, error);
-                    alert("Error processing GitHub files: " + error.message);
-                } finally {
-                    if (button) {
-                        button.disabled = false;
-                        button.querySelector(".sync-icon").classList.remove("spinning");
+                        reject(chrome.runtime.lastError);
+                    } else if (response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        resolve(response);
                     }
                 }
-            }
+            );
+        });
+
+        // Filter files based on rules
+        const filesToFetch = applyFilters(
+            initialResponse.filesList,
+            initialResponse.excludedFiles,
+            initialResponse.includedFiles
         );
+
+        // Show confirmation dialog
+        const shouldProceed = await showSyncConfirmation(
+            filesToFetch,
+            initialResponse.excludedFiles,
+            initialResponse.includedFiles
+        );
+
+        if (!shouldProceed) {
+            console.log("[Content] Sync cancelled by user");
+            return;
+        }
+
+        // Step 2: Fetch actual files after confirmation
+        const finalResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { 
+                    action: "fetchGitHub", 
+                    repoUrl: githubUrl,
+                    confirmed: true,
+                    filesList: filesToFetch,
+                    excludedFiles: initialResponse.excludedFiles,
+                    includedFiles: initialResponse.includedFiles
+                },
+                response => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else if (response.error) {
+                        reject(new Error(response.error));
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+
+        // Step 3: Sync files
+        const claudeFiles = getClaudeFiles();
+        await syncFiles(
+            claudeFiles, 
+            finalResponse.files,
+            finalResponse.excludedFiles,
+            finalResponse.includedFiles
+        );
+
+        console.log("[Content] Project successfully synced with GitHub");
+        alert("Project successfully synced with GitHub!");
     } catch (error) {
-        console.error(`[Content] [${new Date().toISOString()}] Error updating project:`, error);
+        console.error("[Content] Error updating project:", error);
         alert("Error updating project: " + error.message);
+    } finally {
         if (button) {
             button.disabled = false;
             button.querySelector(".sync-icon").classList.remove("spinning");
         }
     }
 }
+
+function applyFilters(filesList, excludedFiles, includedFiles) {
+    console.log("[Content] Applying filters to files list:", {
+        total: filesList.length,
+        excludes: excludedFiles,
+        includes: includedFiles
+    });
+
+    // If include list exists and is not empty, ONLY include files matching the patterns
+    if (includedFiles && includedFiles.length > 0) {
+        filesList = filesList.filter(file => {
+            return includedFiles.some(pattern => {
+                if (pattern.endsWith('/')) {
+                    // It's a directory pattern
+                    return file.startsWith(pattern);
+                }
+                // It's a file pattern
+                return file === pattern;
+            });
+        });
+    }
+
+    // Then apply exclude patterns
+    if (excludedFiles && excludedFiles.length > 0) {
+        filesList = filesList.filter(file => {
+            return !excludedFiles.some(pattern => {
+                if (pattern.endsWith('/')) {
+                    // It's a directory pattern
+                    return file.startsWith(pattern);
+                }
+                // It's a file pattern
+                return file === pattern;
+            });
+        });
+    }
+
+    console.log("[Content] Files after filtering:", filesList.length);
+    return filesList;
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'promptForPAT') {
+        // Create modal container with same styling as sync confirmation
+        const modal = document.createElement('div');
+        modal.className = 'sync-confirmation-modal fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+        
+        // Create modal content
+        const content = document.createElement('div');
+        content.className = 'bg-[#171717] rounded-lg p-6 max-w-lg w-full mx-4 space-y-4 text-gray-100 border border-gray-700';
+        
+        // Create header
+        const header = document.createElement('h3');
+        header.className = 'text-lg font-semibold text-white';
+        header.textContent = 'GitHub Authentication Required';
+        
+        // Create message
+        const message = document.createElement('p');
+        message.className = 'text-sm text-gray-300 mt-2';
+        message.textContent = request.message;
+        
+        // Create input
+        const input = document.createElement('input');
+        input.type = 'password';
+        input.className = 'mt-4 w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        input.placeholder = 'Enter your GitHub PAT';
+        
+        // Create help text
+        const helpText = document.createElement('p');
+        helpText.className = 'text-xs text-gray-400 mt-2';
+        helpText.innerHTML = 'You can create a PAT in your <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-400 hover:text-blue-300">GitHub settings</a>. Only "public_repo" scope is needed.';
+        
+        // Create buttons container
+        const buttons = document.createElement('div');
+        buttons.className = 'flex justify-end space-x-3 mt-6';
+        
+        // Create cancel button
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 rounded-md hover:bg-gray-700 transition-colors border border-gray-700';
+        cancelBtn.textContent = 'Cancel';
+        
+        // Create submit button
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors';
+        submitBtn.textContent = 'Submit';
+        
+        // Assemble modal
+        buttons.append(cancelBtn, submitBtn);
+        content.append(header, message, input, helpText, buttons);
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Handle submit
+        submitBtn.onclick = () => {
+            const pat = input.value.trim();
+            if (pat) {
+                document.body.removeChild(modal);
+                sendResponse(pat);
+            }
+        };
+        
+        // Handle cancel
+        cancelBtn.onclick = () => {
+            document.body.removeChild(modal);
+            sendResponse(null);
+        };
+        
+        // Handle click outside
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+                sendResponse(null);
+            }
+        };
+        
+        // Handle escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                document.body.removeChild(modal);
+                sendResponse(null);
+                window.removeEventListener('keydown', handleEscape);
+            }
+        };
+        window.addEventListener('keydown', handleEscape);
+        
+        return true; // Keep message channel open
+    }
+});
+
+const modalStyles = document.createElement("style");
+modalStyles.textContent = `
+    .sync-confirmation-modal pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        line-height: 1.5;
+    }
+    
+    .sync-confirmation-modal button {
+        transition: all 150ms ease-in-out;
+    }
+    
+    .sync-confirmation-modal button:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+    }
+    
+    /* Add scrollbar styling for the pre element */
+    .sync-confirmation-modal pre::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-track {
+        background: #1f2937;
+        border-radius: 4px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 4px;
+    }
+    
+    .sync-confirmation-modal pre::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+    }
+`;
+document.head.appendChild(modalStyles);
 
 async function removeFile(file) {
     console.log("[Content] Removing file:", file.name);
